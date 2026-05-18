@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบรายงานพลังงาน บก.ทท. (Enterprise Edition)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Recharts -->
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.1.9/umd/Recharts.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Sarabun', sans-serif; }
+        
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Official Memo Print Styles */
+        @media print {
+            @page { size: landscape; margin: 15mm; }
+            :root { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            
+            /* แก้ไขปัญหาเนื้อหาถูกตัดเวลาพิมพ์ */
+            html, body, #root, .h-screen { height: auto !important; min-height: 100% !important; overflow: visible !important; }
+            .overflow-hidden, .overflow-auto, .overflow-x-auto, .overflow-y-auto { overflow: visible !important; }
+            
+            .memo-page { 
+                width: 210mm; 
+                min-height: 297mm; 
+                padding: 20mm; 
+                margin: 0 auto; 
+                background: white; 
+                font-size: 16pt;
+                line-height: 1.5;
+            }
+            body { background: white; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            .print-container { width: 100%; max-width: 100%; margin: 0; padding: 0; box-shadow: none; overflow: visible !important; display: block !important; }
+            
+            /* Ensure tables break cleanly */
+            table { page-break-inside: auto; width: 100% !important; }
+            tr    { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+        }
+        .print-only { display: none; }
+        
+        .memo-preview {
+            background: white;
+            padding: 40px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            max-width: 800px;
+            margin: 0 auto;
+            color: black;
+            font-size: 16px;
+        }
+
+        /* Loading Spinner */
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #2563eb; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        const { useState, useMemo, useEffect } = React;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, Cell, PieChart, Pie } = window.Recharts;
+
+        // --- Google Apps Script Web App URL ---
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby5591daPsk0Wq6IQKlYKir5r0HmawR797sOicWnotBWTUJSZ24fqso_vkVY8d0gZISJw/exec";
+
+        // --- ICONS ---
+        const IconWrapper = ({ children, className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{children}</svg>;
+        const LayoutDashboard = ({className}) => <IconWrapper className={className}><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></IconWrapper>;
+        const Building2 = ({className}) => <IconWrapper className={className}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></IconWrapper>;
+        const ClipboardList = ({className}) => <IconWrapper className={className}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></IconWrapper>;
+        const Printer = ({className}) => <IconWrapper className={className}><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></IconWrapper>;
+        const CheckCircle2 = ({className}) => <IconWrapper className={className}><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></IconWrapper>;
+        const XCircle = ({className}) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></IconWrapper>;
+        const Zap = ({className}) => <IconWrapper className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></IconWrapper>;
+        const Droplets = ({className}) => <IconWrapper className={className}><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7 2.9 7 2.9s-2.15 5.25-2.29 6.16C3.57 10 3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 1 14 6c0 .5-.54 5.4-3 7.5"/></IconWrapper>;
+        const Fuel = ({className}) => <IconWrapper className={className}><line x1="3" x2="15" y1="22" y2="22"/><line x1="4" x2="14" y1="9" y2="9"/><path d="M14 22V4a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v18"/><path d="M14 13h2a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V9.83a2 2 0 0 0-.59-1.42L18 5"/></IconWrapper>;
+        const AlertCircle = ({className}) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></IconWrapper>;
+        const AlertTriangle = ({className}) => <IconWrapper className={className}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></IconWrapper>;
+        const MenuIcon = ({className}) => <IconWrapper className={className}><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></IconWrapper>;
+        const Save = ({className}) => <IconWrapper className={className}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></IconWrapper>;
+        const FileEdit = ({className}) => <IconWrapper className={className}><path d="M4 13.5V4a2 2 0 0 1 2-2h8.5L20 7.5V20a2 2 0 0 1-2 2h-5.5"/><polyline points="14 2 14 8 20 8"/><path d="M10.42 12.61a2.1 2.1 0 1 1 2.97 2.97L7.95 21 4 22l.99-3.95 5.43-5.44Z"/></IconWrapper>;
+        const LogOut = ({className}) => <IconWrapper className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></IconWrapper>;
+        const Download = ({className}) => <IconWrapper className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></IconWrapper>;
+        const TrendingUp = ({className}) => <IconWrapper className={className}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></IconWrapper>;
+        const TrendingDown = ({className}) => <IconWrapper className={className}><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></IconWrapper>;
+        const Calendar = ({className}) => <IconWrapper className={className}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></IconWrapper>;
+        const Settings = ({className}) => <IconWrapper className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></IconWrapper>;
+        const MessageCircle = ({className}) => <IconWrapper className={className}><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></IconWrapper>;
+        const Cloud = ({className}) => <IconWrapper className={className}><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></IconWrapper>;
+        const Upload = ({className}) => <IconWrapper className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></IconWrapper>;
+        const Network = ({className}) => <IconWrapper className={className}><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></IconWrapper>;
+        const Trash2 = ({className}) => <IconWrapper className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></IconWrapper>;
+        const Target = ({className}) => <IconWrapper className={className}><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></IconWrapper>;
+        const Activity = ({className}) => <IconWrapper className={className}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></IconWrapper>;
+        const Lock = ({className}) => <IconWrapper className={className}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></IconWrapper>;
+        const Trophy = ({className}) => <IconWrapper className={className}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></IconWrapper>;
+        const Briefcase = ({className}) => <IconWrapper className={className}><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></IconWrapper>;
+        const ShieldCheck = ({className}) => <IconWrapper className={className}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></IconWrapper>;
+        const HistoryIcon = ({className}) => <IconWrapper className={className}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></IconWrapper>;
+        const FileText = ({className}) => <IconWrapper className={className}><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><line x1="10" x2="8" y1="9" y2="9"/></IconWrapper>;
+        const Building2Icon = Building2;
+
+        // --- DEFAULT DATA & CONSTANTS ---
+        const DEFAULT_HIERARCHY = {
+            'สน.บก.บก.ทท.': ['สน.บก.บก.ทท.'],
+            'สลก.บก.ทท.': ['สลก.บก.ทท.'],
+            'สจร.ทหาร': ['สจร.ทหาร'],
+            'สตน.ทหาร': ['สตน.ทหาร'],
+            'สธน.ทหาร': ['สธน.ทหาร'],
+            'สสก.ทหาร': ['สสก.ทหาร'],
+            'สยย.ทหาร': ['สยย.ทหาร'],
+            'นซบ.ทหาร': ['นซบ.ทหาร'],
+            'กพ.ทหาร': ['กพ.ทหาร'],
+            'ขว.ทหาร': ['ขว.ทหาร'],
+            'ยก.ทหาร': ['ยก.ทหาร'],
+            'กบ.ทหาร': ['กบ.ทหาร'],
+            'กร.ทหาร': ['กร.ทหาร'],
+            'สส.ทหาร': [
+                'สส.ทหาร', 'สน.ทท. (ปทท.1)', 'สน.ทท.กลาโหม', 'สน.ทท.บางนา', 'สน.ทท.ราชวิถี', 
+                'สน.ทท.สาทร (ปชท.บก.ทท.)', 'สน.ทท.ป้อมพระจุล', 'สน.ทท.วังน้อย', 
+                'สน.ทท.ไทรน้อย', 'สน.ทท.เขาอีโต้', 'สน.ทท.เขาเขียว', 'สน.ทท.กบินทร์บุรี', 
+                'สน.ทท.ร.12 รอ.', 'สน.ทท.อรัญประเทศ', 'สน.ทท.บางน้ำเปรี้ยว', 
+                'สน.ทท.บางปะกง', 'สน.ทท.เขานกตระกุม', 'สน.ทท.เขาหมอน', 'สน.ทท.เขายายดา', 
+                'สน.ทท.ปัตตานี (อิงคยุทธ)', 'สน.ทท.เขาปกโย๊ะ', 'สน.ทท.ตันหยง', 
+                'สน.ทท.สงขลา', 'สน.ทท.บ้านโคกสูง', 'สน.ทท.ค่ายเทพสตรีศรีสุนทร', 
+                'สน.ทท.เขาทุ่งสง', 'สน.ทท.ค่ายวิภาวดีรังสิต', 'สน.ทท.คีรีรัฐนิคม', 
+                'สน.ทท.ตะกั่วทุ่ง', 'สน.ทท.ภูเก็ต', 'สน.ทท.ค่ายสิรินธร'
+            ],
+            'สปช.ทหาร': ['สปช.ทหาร'],
+            'นทพ. (บก.นทพ.)': [
+                'นทพ. (บก.นทพ.)', 'สนภ.1 นทพ.', 'นพค.11 สนภ.1 นทพ.', 'นพค.12 สนภ.1 นทพ.', 
+                'นพค.13 สนภ.1 นทพ.', 'นพค.14 สนภ.1 นทพ.', 'นพค.15 สนภ.1 นทพ.', 
+                'นพค.16 สนภ.1 นทพ.', 'วส.934 สนภ.1 นทพ.', 'ช.พัฒนา สนภ.1', 
+                'สนภ.2 นทพ.', 'นพค.21 สนภ.2 นทพ.', 'นพค.22 สนภ.2 นทพ.', 
+                'นพค.23 สนภ.2 นทพ.', 'นพค.24 สนภ.2 นทพ.'
+            ]
+        };
+
+        const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        const YEARS = ['2567', '2568', '2569'];
+
+        const getOilTotal = (oil) => {
+            if (!oil) return 0;
+            return (Number(oil.operational?.diesel) || 0) + (Number(oil.operational?.benzene) || 0) + (Number(oil.operational?.aviation) || 0) + (Number(oil.administrative?.diesel) || 0) + (Number(oil.administrative?.benzene) || 0);
+        };
+
+        const aggregateTotals = (filteredData) => {
+            return filteredData.reduce((acc, d) => {
+                acc.elec_std += Number(d.electricity?.standard) || 0;
+                acc.elec_act += Number(d.electricity?.actual) || 0;
+                acc.elec_cost += Number(d.electricity?.cost) || 0;
+                acc.water_std += Number(d.water?.standard) || 0;
+                acc.water_act += Number(d.water?.actual) || 0;
+                acc.water_cost += Number(d.water?.cost) || 0;
+                acc.oil_op_diesel += Number(d.oil?.operational?.diesel) || 0;
+                acc.oil_op_benzene += Number(d.oil?.operational?.benzene) || 0;
+                acc.oil_op_aviation += Number(d.oil?.operational?.aviation) || 0;
+                acc.oil_adm_diesel += Number(d.oil?.administrative?.diesel) || 0;
+                acc.oil_adm_benzene += Number(d.oil?.administrative?.benzene) || 0;
+                acc.oil_total += getOilTotal(d.oil);
+                return acc;
+            }, {
+                elec_std: 0, elec_act: 0, elec_cost: 0, water_std: 0, water_act: 0, water_cost: 0,
+                oil_op_diesel: 0, oil_op_benzene: 0, oil_op_aviation: 0, oil_adm_diesel: 0, oil_adm_benzene: 0, oil_total: 0
+            });
+        };
+
+        // --- HELPER COMPONENTS ---
+        // ฟังก์ชันสร้าง Modal แทนการใช้ alert/confirm 
+        function Modal({ isOpen, onClose, onConfirm, title, message, type = 'alert' }) {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+                        <div className="flex items-center mb-4">
+                            {type === 'alert' && <AlertCircle className="w-6 h-6 text-blue-500 mr-2" />}
+                            {type === 'confirm' && <AlertTriangle className="w-6 h-6 text-orange-500 mr-2" />}
+                            <h3 className="text-lg font-bold text-slate-800">{title}</h3>
+                        </div>
+                        <p className="text-slate-600 mb-6 whitespace-pre-line">{message}</p>
+                        <div className="flex justify-end space-x-3">
+                            {type === 'confirm' && (
+                                <button onClick={onClose} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 font-medium">ยกเลิก</button>
+                            )}
+                            <button onClick={onConfirm || onClose} className={`px-4 py-2 text-white rounded-lg font-medium ${type === 'confirm' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                {type === 'confirm' ? 'ยืนยัน' : 'ตกลง'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function StatCard({ title, value, unit, highlight, trend, subtitle, format, alert }) {
+            let valueColor = "text-slate-800";
+            let bgClass = "bg-white border-slate-200";
+
+            if (highlight) valueColor = "text-blue-700";
+            if (trend === 'up') {
+                valueColor = "text-rose-700";
+                bgClass = "bg-rose-50 border-rose-200";
+            }
+            if (trend === 'down') {
+                valueColor = "text-emerald-700";
+                bgClass = "bg-emerald-50 border-emerald-200";
+            }
+
+            const displayValue = format === 'currency' 
+                ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+            return (
+                <div className={`p-4 rounded-lg border shadow-sm flex flex-col justify-between ${bgClass} relative`}>
+                    <h4 className="text-sm text-slate-500 mb-1 font-medium">{title}</h4>
+                    <div className="flex items-baseline space-x-1">
+                        <span className={`text-2xl font-bold ${valueColor}`}>{displayValue}</span>
+                        {unit && <span className="text-sm text-slate-500">{unit}</span>}
+                    </div>
+                    {subtitle && (
+                        <p className={`text-xs mt-1 font-medium ${trend === 'up' ? 'text-rose-600' : 'text-emerald-600'}`}>{subtitle}</p>
+                    )}
+                    {alert && (
+                        <div className="absolute top-3 right-3 text-rose-500 bg-rose-100 p-1 rounded-full" title="เกินค่ากลาง">
+                            <AlertTriangle className="w-4 h-4"/>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- VIEW COMPONENTS ---
+        function LoginScreen({ onLogin, hierarchy, unitPasswords }) {
+            const [role, setRole] = useState('admin');
+            const [unit, setUnit] = useState(hierarchy.leaves[0] || '');
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState('');
+
+            useEffect(() => {
+                if (hierarchy.leaves.length > 0 && !hierarchy.leaves.includes(unit)) {
+                    setUnit(hierarchy.leaves[0]);
+                }
+            }, [hierarchy.leaves, unit]);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                setError('');
+                if (role === 'admin' && password !== 'admin123') return setError('รหัสผ่านผู้ดูแลระบบไม่ถูกต้อง (ใช้: admin123)');
+                if (role === 'executive' && password !== 'boss123') return setError('รหัสผ่านผู้บริหารไม่ถูกต้อง (ใช้: boss123)');
+                if (role === 'user') {
+                    const expectedPwd = unitPasswords[unit] || '1234';
+                    if (password !== expectedPwd) return setError(`รหัสผ่านหน่วยงานไม่ถูกต้อง (ค่าเริ่มต้นคือ 1234)`);
+                }
+                
+                onLogin(role, unit);
+            };
+
+            return (
+                <div className="flex h-screen items-center justify-center bg-slate-900 relative overflow-hidden">
+                    <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'1\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")' }}></div>
+                    
+                    <div className="bg-white p-10 rounded-2xl shadow-2xl w-[420px] max-w-[90%] relative z-10">
+                        <div className="text-center mb-8">
+                            <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
+                                <ShieldCheck className="w-8 h-8 text-white" />
+                            </div>
+                            <h1 className="text-2xl font-bold font-serif text-slate-800 mb-1">ระบบรายงานพลังงาน</h1>
+                            <p className="text-sm text-slate-500 font-medium">กองบัญชาการกองทัพไทย (บก.ทท.)</p>
+                            <span className="inline-block mt-3 px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full uppercase tracking-wider">Enterprise Edition</span>
+                        </div>
+
+                        {error && <div className="mb-4 p-3 bg-rose-50 border border-rose-200 text-rose-600 text-sm rounded-lg flex items-center"><AlertCircle className="w-4 h-4 mr-2 flex-shrink-0"/> {error}</div>}
+
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">เข้าใช้งานในฐานะ</label>
+                                <div className="relative">
+                                    <select 
+                                        value={role} 
+                                        onChange={(e) => setRole(e.target.value)}
+                                        className="w-full border border-slate-300 rounded-lg py-2.5 pl-10 pr-3 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-slate-50"
+                                    >
+                                        <option value="admin">ผู้ดูแลระบบส่วนกลาง (Admin)</option>
+                                        <option value="executive">ผู้บริหารระดับสูง (Executive)</option>
+                                        <option value="user">ส่วนราชการ / หน่วยงานย่อย (User)</option>
+                                    </select>
+                                    <Briefcase className="w-5 h-5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                                </div>
+                            </div>
+
+                            {role === 'user' && (
+                                <div>
+                                    <label className="block text-sm font-semibold text-slate-700 mb-1.5">เลือกหน่วยงานของคุณ</label>
+                                    <div className="relative">
+                                        <select 
+                                            value={unit} 
+                                            onChange={(e) => setUnit(e.target.value)}
+                                            className="w-full border border-slate-300 rounded-lg py-2.5 pl-10 pr-3 focus:ring-2 focus:ring-blue-500 outline-none appearance-none bg-slate-50"
+                                        >
+                                            {hierarchy.parents.map(parent => (
+                                                <optgroup key={parent} label={hierarchy.dict[parent].length > 1 ? `กลุ่ม ${parent}` : parent}>
+                                                    {hierarchy.dict[parent].map(u => <option key={u} value={u}>{u}</option>)}
+                                                </optgroup>
+                                            ))}
+                                        </select>
+                                        <Building2Icon className="w-5 h-5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-semibold text-slate-700 mb-1.5">รหัสผ่าน (Password)</label>
+                                <div className="relative">
+                                    <input 
+                                        type="password" 
+                                        placeholder="กรอกรหัสผ่าน"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        className="w-full border border-slate-300 rounded-lg py-2.5 pl-10 pr-3 focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                    <Lock className="w-5 h-5 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                                </div>
+                            </div>
+
+                            <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition-colors mt-2 shadow-md">
+                                เข้าสู่ระบบ
+                            </button>
+                        </form>
+                        
+                        <div className="mt-6 text-center text-xs text-slate-400 border-t border-slate-100 pt-4">
+                            *Demo Passwords: Admin=<code>admin123</code> | Exec=<code>boss123</code> | User=<code>1234</code> (เว้นแต่จะถูกเปลี่ยน)
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function UnitSettings({ hierarchy, onUpdateHierarchy, unitPasswords, onUpdatePasswords, onAddLog, showModal }) {
+            const [newParentName, setNewParentName] = useState('');
+            const [newChildNames, setNewChildNames] = useState({});
+            const [localPwds, setLocalPwds] = useState(unitPasswords);
+
+            useEffect(() => {
+                setLocalPwds(unitPasswords);
+            }, [unitPasswords]);
+
+            const handleAddParent = () => {
+                if (newParentName.trim() === '') return;
+                if (hierarchy.parents.includes(newParentName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อกลุ่มหน่วยงานนี้มีอยู่แล้วในระบบ', type: 'alert'});
+                
+                const updatedDict = { ...hierarchy.dict, [newParentName]: [newParentName] };
+                onUpdateHierarchy(updatedDict);
+                onAddLog('เพิ่มกลุ่มหน่วยงาน', `เพิ่มกลุ่มหน่วยแม่: ${newParentName}`);
+                setNewParentName('');
+            };
+
+            const handleAddChild = (parent) => {
+                const childName = newChildNames[parent];
+                if (!childName || childName.trim() === '') return;
+                if (hierarchy.leaves.includes(childName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อหน่วยงานย่อยนี้มีอยู่แล้วในระบบ ไม่สามารถซ้ำได้', type: 'alert'});
+                
+                const updatedChildren = [...hierarchy.dict[parent], childName];
+                const updatedDict = { ...hierarchy.dict, [parent]: updatedChildren };
+                onUpdateHierarchy(updatedDict);
+                onAddLog('เพิ่มหน่วยงานย่อย', `เพิ่ม ${childName} ภายใต้กลุ่ม ${parent}`);
+                setNewChildNames(prev => ({ ...prev, [parent]: '' }));
+            };
+
+            const handleDeleteChild = (parent, child) => {
+                showModal({
+                    title: 'ยืนยันการลบ', 
+                    message: `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยงาน "${child}" ออกจากระบบ?\n(ข้อมูลเก่าจะยังอยู่ในฐานข้อมูล แต่อาจไม่แสดงผลในรายงานรวม)`, 
+                    type: 'confirm',
+                    onConfirm: () => {
+                        const updatedChildren = hierarchy.dict[parent].filter(c => c !== child);
+                        onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren });
+                        onAddLog('ลบหน่วยงานย่อย', `ลบ ${child} ออกจากกลุ่ม ${parent}`);
+                    }
+                });
+            };
+
+            const handleDeleteParent = (parent) => {
+                showModal({
+                    title: 'คำเตือน: ยืนยันการลบกลุ่ม', 
+                    message: `คุณต้องการลบกลุ่ม "${parent}" พร้อมทั้งหน่วยงานย่อยทั้งหมดในกลุ่มนี้ใช่หรือไม่?`, 
+                    type: 'confirm',
+                    onConfirm: () => {
+                        const newDict = { ...hierarchy.dict };
+                        delete newDict[parent];
+                        onUpdateHierarchy(newDict);
+                        onAddLog('ลบกลุ่มหน่วยงาน', `ลบกลุ่ม ${parent} ทั้งหมด`);
+                    }
+                });
+            };
+
+            const handlePwdChange = (u, val) => {
+                setLocalPwds(prev => ({ ...prev, [u]: val }));
+            };
+
+            const handleSavePasswords = () => {
+                onUpdatePasswords(localPwds);
+            };
+
+            return (
+                <div className="max-w-5xl mx-auto space-y-6">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-lg text-slate-800 mb-2">1. โครงสร้างหน่วยงานในระบบ</h3>
+                        <p className="text-sm text-slate-500 mb-6">เพิ่มหรือลดรายชื่อหน่วยงาน เพื่อให้หน่วยงานเหล่านั้นสามารถล็อกอินเข้าระบบและบันทึกข้อมูลได้</p>
+                        
+                        <div className="flex space-x-3 mb-8 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            <input 
+                                type="text" placeholder="พิมพ์ชื่อกลุ่มหน่วยงานหลัก (เช่น สส.ทหาร)" 
+                                className="border border-slate-300 rounded p-2 flex-1 focus:ring-2 focus:ring-blue-500"
+                                value={newParentName} onChange={e => setNewParentName(e.target.value)}
+                            />
+                            <button onClick={handleAddParent} className="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700">+ เพิ่มกลุ่มหน่วยแม่</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {hierarchy.parents.map(parent => (
+                                <div key={parent} className="border border-slate-200 rounded-lg shadow-sm bg-white overflow-hidden flex flex-col">
+                                    <div className="bg-slate-800 p-3 flex justify-between items-center text-white">
+                                        <h4 className="font-bold text-sm truncate flex-1">{parent}</h4>
+                                        <button onClick={() => handleDeleteParent(parent)} title="ลบกลุ่มนี้" className="text-slate-400 hover:text-rose-400 ml-2"><Trash2 className="w-4 h-4" /></button>
+                                    </div>
+                                    <div className="p-3 flex-1 overflow-y-auto max-h-60 bg-slate-50">
+                                        <ul className="space-y-1">
+                                            {hierarchy.dict[parent].map((child, idx) => (
+                                                <li key={child} className="flex justify-between items-center bg-white p-2 rounded border border-slate-100 text-sm">
+                                                    <span className={`truncate ${idx===0 ? 'font-bold text-blue-700' : 'text-slate-700'}`}>{idx===0 ? `▪ ${child}` : `- ${child}`}</span>
+                                                    <button onClick={() => handleDeleteChild(parent, child)} className="text-slate-300 hover:text-rose-500"><XCircle className="w-4 h-4" /></button>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                    <div className="p-3 bg-white border-t border-slate-200">
+                                        <div className="flex space-x-2">
+                                            <input 
+                                                type="text" placeholder="เพิ่มหน่วยย่อย..." 
+                                                className="border border-slate-300 rounded px-2 py-1 flex-1 text-sm focus:ring-1 focus:ring-blue-500"
+                                                value={newChildNames[parent] || ''} onChange={e => setNewChildNames(prev => ({...prev, [parent]: e.target.value}))}
+                                                onKeyDown={e => e.key === 'Enter' && handleAddChild(parent)}
+                                            />
+                                            <button onClick={() => handleAddChild(parent)} className="bg-emerald-600 text-white px-2 py-1 rounded text-sm hover:bg-emerald-700">เพิ่ม</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="bg-slate-800 px-6 py-4 flex justify-between items-center text-white">
+                            <h3 className="font-bold text-lg flex items-center"><Lock className="w-5 h-5 mr-2"/> 2. จัดการรหัสผ่านแยกแต่ละหน่วยงาน</h3>
+                            <button onClick={handleSavePasswords} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-md flex items-center text-sm font-medium transition-colors">
+                                <Save className="w-4 h-4 mr-2"/> บันทึกรหัสผ่าน
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-sm text-slate-500 mb-4">กำหนดรหัสผ่านสำหรับการเข้าสู่ระบบของแต่ละหน่วยงาน (ค่าเริ่มต้นคือ 1234) หากมีการเปลี่ยนรหัสผ่าน หน่วยงานนั้นๆ จะต้องใช้รหัสผ่านใหม่ในการล็อกอินทันที</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {hierarchy.leaves.map(u => (
+                                    <div key={`pwd-${u}`} className="flex justify-between items-center bg-slate-50 p-3 rounded border border-slate-200">
+                                        <span className="text-sm font-medium text-slate-700 truncate mr-2" title={u}>{u}</span>
+                                        <input 
+                                            type="text" 
+                                            value={localPwds[u] || '1234'} 
+                                            onChange={(e) => handlePwdChange(u, e.target.value)}
+                                            className="border border-slate-300 rounded p-1 text-sm w-24 text-center focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function StandardSettings({ data, year, onUpdateStandards, hierarchy, onAddLog, showModal }) {
+            const [localStds, setLocalStds] = useState({});
+
+            useEffect(() => {
+                const stds = {};
+                hierarchy.leaves.forEach(u => {
+                    const existing = data.find(d => d.year === year && d.unit === u && d.status === 'submitted');
+                    stds[u] = {
+                        elec: existing?.electricity?.standard || 50000,
+                        water: existing?.water?.standard || 10000
+                    };
+                });
+                setLocalStds(stds);
+            }, [year, data, hierarchy.leaves]);
+
+            const handleChange = (unit, field, value) => {
+                setLocalStds(prev => ({ ...prev, [unit]: { ...prev[unit], [field]: value } }));
+            };
+
+            const handleSave = async () => {
+                await onUpdateStandards(year, localStds);
+                onAddLog('ตั้งค่าส่วนกลาง', `อัปเดตค่ากลาง (Standard) ประจำปีงบฯ ${year}`);
+            };
+
+            return (
+                <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-800 px-6 py-4 flex justify-between items-center text-white">
+                        <h3 className="font-bold text-lg flex items-center"><Settings className="w-5 h-5 mr-2"/> กำหนดค่ากลาง (Standard) ประจำปีงบฯ {year}</h3>
+                        <button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md flex items-center text-sm font-medium transition-colors">
+                            <Save className="w-4 h-4 mr-2"/> บันทึกการตั้งค่า
+                        </button>
+                    </div>
+                    <div className="p-6">
+                        <p className="text-sm text-slate-500 mb-4">คุณสามารถปรับปรุงค่ากลางของการใช้ไฟฟ้าและน้ำประปาของแต่ละหน่วยงานในหน้าต่างนี้ เมื่อบันทึกข้อมูลแล้ว ระบบจะอัปเดตการวิเคราะห์ผลต่าง (%) ในหน้า Dashboard อัตโนมัติ</p>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-100 text-slate-700">
+                                        <th className="p-3 border-b border-slate-300 w-1/3">หน่วยงานย่อย</th>
+                                        <th className="p-3 border-b border-slate-300 text-center w-1/3">ค่ากลาง ไฟฟ้า (หน่วย/เดือน)</th>
+                                        <th className="p-3 border-b border-slate-300 text-center w-1/3">ค่ากลาง น้ำประปา (ลบ.ม./เดือน)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {hierarchy.parents.map(parent => (
+                                        <React.Fragment key={`std-${parent}`}>
+                                            <tr className="bg-slate-50">
+                                                <td colSpan={3} className="p-2 font-bold text-slate-700 border-y border-slate-200">{parent}</td>
+                                            </tr>
+                                            {hierarchy.dict[parent].map(child => (
+                                                <tr key={`std-${child}`} className="hover:bg-slate-50">
+                                                    <td className="p-3 pl-8 text-slate-600">- {child}</td>
+                                                    <td className="p-2 text-center">
+                                                        <input type="number" value={localStds[child]?.elec || ''} onChange={(e) => handleChange(child, 'elec', e.target.value)} className="border border-slate-300 rounded p-1.5 w-32 text-right focus:ring-2 focus:ring-blue-500" />
+                                                    </td>
+                                                    <td className="p-2 text-center">
+                                                        <input type="number" value={localStds[child]?.water || ''} onChange={(e) => handleChange(child, 'water', e.target.value)} className="border border-slate-300 rounded p-1.5 w-32 text-right focus:ring-2 focus:ring-blue-500" />
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function AuditLogs({ logs }) {
+            return (
+                <div className="max-w-5xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-800 px-6 py-4 flex justify-between items-center text-white">
+                        <h3 className="font-bold text-lg flex items-center"><HistoryIcon className="w-5 h-5 mr-2"/> ประวัติการใช้งานระบบ (Audit Logs)</h3>
+                    </div>
+                    <div className="p-0">
+                        {logs.length === 0 ? (
+                            <div className="p-8 text-center text-slate-500">ยังไม่มีประวัติการใช้งาน</div>
+                        ) : (
+                            <table className="w-full text-sm text-left">
+                                <thead>
+                                    <tr className="bg-slate-100 text-slate-600 border-b border-slate-200">
+                                        <th className="p-4 font-medium w-1/4">วัน-เวลา</th>
+                                        <th className="p-4 font-medium w-1/4">ผู้ใช้งาน (หน่วย)</th>
+                                        <th className="p-4 font-medium w-1/4">ประเภท</th>
+                                        <th className="p-4 font-medium w-1/4">รายละเอียด</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {logs.map((log, i) => (
+                                        <tr key={log.id || i} className="hover:bg-slate-50">
+                                            <td className="p-4 text-slate-500">{log.timestamp}</td>
+                                            <td className="p-4 font-medium text-slate-700">
+                                                {log.user} <span className="text-xs font-normal text-slate-400">({log.role})</span>
+                                            </td>
+                                            <td className="p-4"><span className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">{log.action}</span></td>
+                                            <td className="p-4 text-slate-600">{log.details}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        function Dashboard({ unit, month, year, data, activeCategory, hierarchy, currentUser }) {
+            const [viewMode, setViewMode] = useState('chart'); 
+            const [comparisonMode, setComparisonMode] = useState('mom'); 
+            
+            const isGroup = unit.startsWith('GROUP_');
+            const actualUnit = isGroup ? unit.replace('GROUP_', '') : unit;
+            const isYearly = month === 'สรุปรายปี';
+
+            const displayUnits = useMemo(() => {
+                if (unit === 'overall') return hierarchy.leaves;
+                if (isGroup) return hierarchy.dict[actualUnit];
+                return [unit];
+            }, [unit, isGroup, actualUnit, hierarchy]);
+
+            const currentData = useMemo(() => {
+                return data.filter(d => d.year === year && (isYearly ? true : d.month === month) && displayUnits.includes(d.unit) && d.status === 'submitted');
+            }, [data, month, year, displayUnits, isYearly]);
+
+            const stats = useMemo(() => aggregateTotals(currentData), [currentData]);
+
+            const prevStats = useMemo(() => {
+                const monthIndex = MONTHS.indexOf(month);
+                let pMonth, pYear;
+                
+                if (isYearly) {
+                    pMonth = null;
+                    pYear = (parseInt(year) - 1).toString();
+                } else {
+                    if (comparisonMode === 'mom') {
+                        pMonth = monthIndex === 0 ? MONTHS[11] : MONTHS[monthIndex - 1];
+                        pYear = monthIndex === 0 ? (parseInt(year) - 1).toString() : year;
+                    } else {
+                        pMonth = month;
+                        pYear = (parseInt(year) - 1).toString();
+                    }
+                }
+                
+                const pData = data.filter(d => d.year === pYear && (isYearly ? true : d.month === pMonth) && displayUnits.includes(d.unit) && d.status === 'submitted');
+                return aggregateTotals(pData);
+            }, [data, month, year, displayUnits, isYearly, comparisonMode]);
+
+            const ytdStats = useMemo(() => {
+                if (isYearly) return stats; 
+                const monthIndex = MONTHS.indexOf(month);
+                const validMonths = MONTHS.slice(0, monthIndex + 1);
+                const yData = data.filter(d => d.year === year && validMonths.includes(d.month) && displayUnits.includes(d.unit) && d.status === 'submitted');
+                return aggregateTotals(yData);
+            }, [data, month, year, displayUnits, isYearly, stats]);
+
+            // --- KPI & Forecasting Logic ---
+            const kpiStats = useMemo(() => {
+                const targetElec = ytdStats.elec_std * 0.8;
+                const targetWater = ytdStats.water_std * 0.8;
+                
+                const elecPass = ytdStats.elec_act <= targetElec;
+                const waterPass = ytdStats.water_act <= targetWater;
+                
+                const elecPercent = ytdStats.elec_std > 0 ? (ytdStats.elec_act / ytdStats.elec_std) * 100 : 0;
+                const waterPercent = ytdStats.water_std > 0 ? (ytdStats.water_act / ytdStats.water_std) * 100 : 0;
+
+                const elecBudget = ytdStats.elec_std > 0 ? (ytdStats.elec_cost / ytdStats.elec_act) * ytdStats.elec_std * 12 : 5000000;
+                const elecSpentPercent = elecBudget > 0 ? (ytdStats.elec_cost / elecBudget) * 100 : 0;
+
+                return { targetElec, targetWater, elecPass, waterPass, elecPercent, waterPercent, elecBudget, elecCost: ytdStats.elec_cost, elecSpentPercent };
+            }, [ytdStats]);
+
+            const trendChartData = useMemo(() => {
+                if (activeCategory !== 'all' || isYearly) return [];
+                const leavesToSum = unit === 'overall' ? hierarchy.leaves : (isGroup ? hierarchy.dict[actualUnit] : [unit]);
+                const averages = { elec: 0, water: 0 };
+                let totalSubmittedMonths = 0;
+                
+                const monthlyData = MONTHS.map(m => {
+                    const dList = data.filter(item => item.year === year && item.month === m && leavesToSum.includes(item.unit) && item.status === 'submitted');
+                    let elec_actual = 0, elec_std = 0;
+                    let isSubmitted = false;
+
+                    if (dList.length > 0) {
+                        isSubmitted = true;
+                        totalSubmittedMonths++;
+                        const totals = aggregateTotals(dList);
+                        elec_actual = totals.elec_act;
+                        elec_std = totals.elec_std;
+                        averages.elec += elec_actual;
+                    } else {
+                         const prevList = data.filter(item => item.year === year && item.month === MONTHS[0] && leavesToSum.includes(item.unit));
+                         if (prevList.length > 0) elec_std = aggregateTotals(prevList).elec_std;
+                    }
+
+                    return { name: m, isSubmitted, elec_actual: isSubmitted ? elec_actual : null, elec_std };
+                });
+
+                if (totalSubmittedMonths > 0) averages.elec /= totalSubmittedMonths;
+
+                return monthlyData.map(d => ({
+                    ...d,
+                    elec_forecast: !d.isSubmitted ? averages.elec : null,
+                    elec_kpi: d.elec_std * 0.8
+                }));
+            }, [data, unit, year, isGroup, actualUnit, hierarchy, activeCategory, isYearly]);
+
+            const leaderboard = useMemo(() => {
+                if (unit !== 'overall') return []; 
+                const unitStats = hierarchy.leaves.map(u => {
+                    const uData = data.filter(d => d.year === year && (isYearly ? true : d.month === month) && d.unit === u && d.status === 'submitted');
+                    const totals = aggregateTotals(uData);
+                    const savingPercent = totals.elec_std > 0 ? ((totals.elec_act - totals.elec_std) / totals.elec_std) * 100 : 0;
+                    return { unit: u, percent: savingPercent, actual: totals.elec_act, std: totals.elec_std };
+                }).filter(u => u.std > 0); 
+
+                unitStats.sort((a, b) => a.percent - b.percent);
+                return unitStats.slice(0, 5);
+            }, [data, year, month, isYearly, hierarchy.leaves, unit]);
+
+            const chartData = useMemo(() => {
+                if (unit === 'overall' || isGroup) {
+                    const iterationTarget = unit === 'overall' ? hierarchy.parents.map(p => hierarchy.dict[p][0]) : hierarchy.dict[actualUnit];
+                    return iterationTarget.map(iter => {
+                        const children = [iter]; 
+                        const dList = data.filter(item => item.year === year && (isYearly ? true : item.month === month) && children.includes(item.unit) && item.status === 'submitted');
+                        const totals = aggregateTotals(dList);
+                        return {
+                            name: iter, elec_actual: totals.elec_act, water_actual: totals.water_act, oil_actual: totals.oil_total,
+                            elec_std: totals.elec_std, water_std: totals.water_std,
+                            oil_op_diesel: totals.oil_op_diesel, oil_op_benzene: totals.oil_op_benzene, oil_op_aviation: totals.oil_op_aviation,
+                            oil_adm_diesel: totals.oil_adm_diesel, oil_adm_benzene: totals.oil_adm_benzene,
+                        };
+                    });
+                } else {
+                    return MONTHS.map(m => {
+                        const dList = data.filter(item => item.year === year && item.unit === unit && item.month === m && item.status === 'submitted');
+                        const totals = aggregateTotals(dList);
+                        return {
+                            name: m, elec_actual: totals.elec_act, elec_std: totals.elec_std,
+                            water_actual: totals.water_act, water_std: totals.water_std, oil_actual: totals.oil_total,
+                            oil_op_diesel: totals.oil_op_diesel, oil_op_benzene: totals.oil_op_benzene, oil_op_aviation: totals.oil_op_aviation,
+                            oil_adm_diesel: totals.oil_adm_diesel, oil_adm_benzene: totals.oil_adm_benzene,
+                        };
+                    });
+                }
+            }, [data, unit, month, year, isGroup, actualUnit, isYearly, hierarchy]);
+
+            const allUnitsComparisonData = useMemo(() => {
+                const monthIndex = MONTHS.indexOf(month);
+                let pMonth, pYear;
+                if (isYearly) { pMonth = null; pYear = (parseInt(year) - 1).toString(); }
+                else {
+                    if (comparisonMode === 'mom') { pMonth = monthIndex === 0 ? MONTHS[11] : MONTHS[monthIndex - 1]; pYear = monthIndex === 0 ? (parseInt(year) - 1).toString() : year; }
+                    else { pMonth = month; pYear = (parseInt(year) - 1).toString(); }
+                }
+
+                const targetUnits = unit === 'overall' ? hierarchy.parents.map(p => hierarchy.dict[p][0]) : displayUnits;
+
+                return targetUnits.map(u => {
+                    const children = [u]; 
+                    const currTotals = aggregateTotals(data.filter(d => d.year === year && (isYearly ? true : d.month === month) && children.includes(d.unit) && d.status === 'submitted'));
+                    const prevTotals = aggregateTotals(data.filter(d => d.year === pYear && (isYearly ? true : d.month === pMonth) && children.includes(d.unit) && d.status === 'submitted'));
+                    return {
+                        unit: u, elec_curr: currTotals.elec_act, elec_prev: prevTotals.elec_act,
+                        water_curr: currTotals.water_act, water_prev: prevTotals.water_act,
+                        oil_curr: currTotals.oil_total, oil_prev: prevTotals.oil_total,
+                    };
+                });
+            }, [data, month, year, displayUnits, unit, isYearly, comparisonMode, hierarchy]);
+
+            const calcDiff = (curr, prev) => {
+                if (prev === 0 && curr === 0) return { text: '-', color: 'text-slate-400' };
+                if (prev === 0) return { text: '+100%', color: 'text-rose-600' };
+                const diff = ((curr - prev) / prev) * 100;
+                const isUp = diff > 0;
+                return { 
+                    text: `${isUp ? '+' : ''}${Math.abs(diff).toFixed(1)}%`, 
+                    color: isUp ? 'text-rose-600 font-medium' : 'text-emerald-600 font-medium',
+                    icon: isUp ? <TrendingUp className="inline w-3 h-3 mr-1" /> : <TrendingDown className="inline w-3 h-3 mr-1" />
+                };
+            };
+
+            const elecDiff = stats.elec_act - stats.elec_std;
+            const waterDiff = stats.water_act - stats.water_std;
+            const comparisonSubtitle = isYearly ? "ปีปัจจุบัน vs ปีก่อน" : (comparisonMode === 'mom' ? "เดือนปัจจุบัน vs เดือนก่อน" : "เดือนปัจจุบัน vs เดือนเดียวกันปีก่อน");
+            const comparisonPrevName = isYearly ? "ปีก่อน" : (comparisonMode === 'mom' ? "เดือนก่อน" : "ปีก่อน");
+
+            const renderMoM = (current, previous, unitText) => {
+                if (previous === 0) return <span className="text-slate-400 text-sm">ไม่มีข้อมูลอดีตเปรียบเทียบ</span>;
+                const diff = current - previous;
+                const percent = ((diff / previous) * 100).toFixed(1);
+                const isUp = diff > 0;
+                return (
+                    <div className={`flex items-center text-sm font-medium ${isUp ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {isUp ? <TrendingUp className="w-4 h-4 mr-1" /> : <TrendingDown className="w-4 h-4 mr-1" />}
+                        <span>{Math.abs(diff).toLocaleString(undefined, {maximumFractionDigits:0})} {unitText} ({Math.abs(percent)}%)</span>
+                    </div>
+                );
+            };
+
+            if (currentData.length === 0) {
+                return (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-500 bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+                        <AlertCircle className="w-16 h-16 mb-4 text-slate-300" />
+                        <h3 className="text-xl">หน่วยงานที่เลือกยังไม่ได้รายงานข้อมูลในช่วงเวลาที่ระบุ</h3>
+                        <p className="mt-2">โปรดรอการรายงาน หรือปรับเปลี่ยนเดือน/ปี ที่ต้องการดู</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="max-w-7xl mx-auto space-y-6">
+                    <div className="flex flex-col md:flex-row justify-between items-center bg-white p-3 rounded-xl shadow-sm border border-slate-200 mb-6 no-print gap-4">
+                        <div className="flex items-center space-x-4">
+                            <span className="text-sm font-bold text-slate-700">รูปแบบการเปรียบเทียบอดีต:</span>
+                            {!isYearly ? (
+                                <div className="flex bg-slate-100 rounded-lg p-1">
+                                    <button onClick={() => setComparisonMode('mom')} className={`px-3 py-1 text-sm rounded-md transition-colors ${comparisonMode === 'mom' ? 'bg-white shadow-sm font-bold text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>เดือนก่อน (MoM)</button>
+                                    <button onClick={() => setComparisonMode('yoy')} className={`px-3 py-1 text-sm rounded-md transition-colors ${comparisonMode === 'yoy' ? 'bg-white shadow-sm font-bold text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>ปีก่อน (YoY)</button>
+                                </div>
+                            ) : (
+                                <span className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-md">ปีปัจจุบัน vs ปีก่อน (YoY)</span>
+                            )}
+                        </div>
+                        <div className="flex items-center space-x-4">
+                            <span className="text-sm font-bold text-slate-700">รูปแบบตาราง/กราฟ (ภาพรวม):</span>
+                            <div className="flex bg-slate-100 rounded-lg p-1">
+                                <button onClick={() => setViewMode('chart')} className={`px-3 py-1 text-sm rounded-md transition-colors flex items-center ${viewMode === 'chart' ? 'bg-white shadow-sm font-bold text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>📊 กราฟ</button>
+                                <button onClick={() => setViewMode('table')} className={`px-3 py-1 text-sm rounded-md transition-colors flex items-center ${viewMode === 'table' ? 'bg-white shadow-sm font-bold text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>📝 ตาราง</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {(activeCategory === 'all' && (currentUser.role === 'admin' || currentUser.role === 'executive') && unit === 'overall') && (
+                        <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-800 overflow-hidden mb-8 no-print text-white">
+                            <div className="px-6 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-950">
+                                <h3 className="text-lg font-bold flex items-center text-yellow-400">
+                                    <Briefcase className="w-5 h-5 mr-2" /> Executive Analytics Dashboard
+                                </h3>
+                                <span className="text-xs bg-blue-600 px-2 py-1 rounded text-white font-medium">ภาพรวมระดับองค์กร</span>
+                            </div>
+                            
+                            <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-8">
+                                <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                                    <h4 className="font-bold text-slate-300 mb-4 flex items-center">
+                                        <Trophy className="w-5 h-5 mr-2 text-yellow-400" /> จัดอันดับประหยัดพลังงาน (Top 5)
+                                    </h4>
+                                    <ul className="space-y-3">
+                                        {leaderboard.map((item, idx) => (
+                                            <li key={item.unit} className="flex justify-between items-center text-sm border-b border-slate-700/50 pb-2">
+                                                <div className="flex items-center">
+                                                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs mr-3 font-bold ${idx === 0 ? 'bg-yellow-500 text-slate-900' : idx === 1 ? 'bg-slate-300 text-slate-900' : idx === 2 ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}>
+                                                        {idx + 1}
+                                                    </span>
+                                                    <span className="font-medium text-slate-200">{item.unit}</span>
+                                                </div>
+                                                <span className={`font-bold ${item.percent < 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    {item.percent > 0 ? '+' : ''}{item.percent.toFixed(1)}%
+                                                </span>
+                                            </li>
+                                        ))}
+                                        {leaderboard.length === 0 && <li className="text-slate-500 text-sm">ไม่มีข้อมูลเพียงพอ</li>}
+                                    </ul>
+                                </div>
+
+                                <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                                    <h4 className="font-bold text-slate-300 mb-4 flex items-center">
+                                        <Target className="w-5 h-5 mr-2 text-emerald-400" /> ตัวชี้วัดรัฐบาล 20% (YTD)
+                                    </h4>
+                                    <div className="space-y-5">
+                                        <div>
+                                            <div className="flex justify-between items-end mb-2">
+                                                <span className="text-sm font-medium text-blue-300">ไฟฟ้า (เป้า: ≤ 80%)</span>
+                                                <span className={`text-sm font-bold ${kpiStats.elecPass ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    ใช้ไปแล้ว {kpiStats.elecPercent.toFixed(1)}% 
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-slate-700 rounded-full h-2.5 relative">
+                                                <div className="absolute top-0 bottom-0 left-[80%] w-0.5 bg-emerald-400 z-10"></div>
+                                                <div className="absolute top-0 bottom-0 left-[100%] w-0.5 bg-rose-500 z-10"></div>
+                                                <div className={`h-2.5 rounded-full ${kpiStats.elecPass ? 'bg-blue-500' : 'bg-rose-500'}`} style={{ width: `${Math.min(kpiStats.elecPercent, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between items-end mb-2">
+                                                <span className="text-sm font-medium text-cyan-300">น้ำประปา (เป้า: ≤ 80%)</span>
+                                                <span className={`text-sm font-bold ${kpiStats.waterPass ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                                    ใช้ไปแล้ว {kpiStats.waterPercent.toFixed(1)}% 
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-slate-700 rounded-full h-2.5 relative">
+                                                <div className="absolute top-0 bottom-0 left-[80%] w-0.5 bg-emerald-400 z-10"></div>
+                                                <div className="absolute top-0 bottom-0 left-[100%] w-0.5 bg-rose-500 z-10"></div>
+                                                <div className={`h-2.5 rounded-full ${kpiStats.waterPass ? 'bg-cyan-500' : 'bg-rose-500'}`} style={{ width: `${Math.min(kpiStats.waterPercent, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+                                        <div className="pt-2">
+                                            <h5 className="text-sm font-medium text-purple-300 mb-2">วิเคราะห์งบประมาณไฟฟ้า (ประมาณการ)</h5>
+                                            <div className="flex justify-between text-xs text-slate-400 mb-1">
+                                                <span>จ่ายแล้ว: ฿{(kpiStats.elecCost/1000000).toFixed(1)}M</span>
+                                                <span>งบรวม: ฿{(kpiStats.elecBudget/1000000).toFixed(1)}M</span>
+                                            </div>
+                                            <div className="w-full bg-slate-700 rounded-full h-2 relative">
+                                                <div className={`h-2 rounded-full ${kpiStats.elecSpentPercent > 90 ? 'bg-rose-500' : 'bg-purple-500'}`} style={{ width: `${Math.min(kpiStats.elecSpentPercent, 100)}%` }}></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700/50">
+                                    <h4 className="font-bold text-slate-300 mb-2 flex items-center">
+                                        <TrendingUp className="w-5 h-5 mr-2 text-pink-400" /> พยากรณ์แนวโน้มสิ้นปี
+                                    </h4>
+                                    <div className="h-40 w-full mt-2">
+                                        {!isYearly ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <ComposedChart data={trendChartData} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                                <XAxis dataKey="name" tick={{fontSize: 9, fill: '#94a3b8'}} stroke="#475569" />
+                                                <YAxis tick={{fontSize: 9, fill: '#94a3b8'}} stroke="#475569" />
+                                                <Tooltip contentStyle={{backgroundColor: '#0f172a', borderColor: '#334155', color: '#f8fafc', fontSize: '11px'}} />
+                                                <Bar dataKey="elec_actual" name="ใช้จริง" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                                                <Bar dataKey="elec_forecast" name="พยากรณ์" fill="#3b82f6" fillOpacity={0.3} stroke="#3b82f6" strokeDasharray="3 3" radius={[2, 2, 0, 0]} />
+                                                <Line type="step" dataKey="elec_kpi" name="เป้า 20%" stroke="#10b981" strokeWidth={2} dot={false} />
+                                            </ComposedChart>
+                                        </ResponsiveContainer>
+                                        ) : (
+                                            <div className="flex h-full items-center justify-center text-slate-500 text-sm">พยากรณ์ไม่ทำงานในโหมดสรุปรายปี</div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {(activeCategory === 'all') && (
+                        <div className="space-y-6 mb-8">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-gradient-to-br from-blue-50 to-white p-5 rounded-xl border border-blue-100 shadow-sm relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10"><Zap className="w-16 h-16 text-blue-600"/></div>
+                                    <h4 className="text-blue-800 font-bold mb-3 flex items-center"><Zap className="w-4 h-4 mr-2"/> ภาพรวมไฟฟ้า {isYearly && '(ทั้งปี)'}</h4>
+                                    <p className="text-xs text-slate-500 mb-1">{isYearly ? 'ปริมาณการใช้ทั้งหมด' : 'ปริมาณสะสมตั้งแต่ต้นปี (YTD)'}</p>
+                                    <p className="text-2xl font-bold text-blue-700">{ytdStats.elec_act.toLocaleString()} <span className="text-sm font-normal">หน่วย</span></p>
+                                    <p className="text-sm text-slate-600 font-medium mb-3">มูลค่าสะสม: ฿{ytdStats.elec_cost.toLocaleString()}</p>
+                                    <div className="pt-3 border-t border-blue-100">
+                                        <p className="text-xs text-slate-500 mb-1">เทียบกับ {comparisonPrevName}</p>
+                                        {renderMoM(stats.elec_act, prevStats.elec_act, 'หน่วย')}
+                                    </div>
+                                </div>
+                                <div className="bg-gradient-to-br from-cyan-50 to-white p-5 rounded-xl border border-cyan-100 shadow-sm relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10"><Droplets className="w-16 h-16 text-cyan-600"/></div>
+                                    <h4 className="text-cyan-800 font-bold mb-3 flex items-center"><Droplets className="w-4 h-4 mr-2"/> ภาพรวมน้ำประปา {isYearly && '(ทั้งปี)'}</h4>
+                                    <p className="text-xs text-slate-500 mb-1">{isYearly ? 'ปริมาณการใช้ทั้งหมด' : 'ปริมาณสะสมตั้งแต่ต้นปี (YTD)'}</p>
+                                    <p className="text-2xl font-bold text-cyan-700">{ytdStats.water_act.toLocaleString()} <span className="text-sm font-normal">ลบ.ม.</span></p>
+                                    <p className="text-sm text-slate-600 font-medium mb-3">มูลค่าสะสม: ฿{ytdStats.water_cost.toLocaleString()}</p>
+                                    <div className="pt-3 border-t border-cyan-100">
+                                        <p className="text-xs text-slate-500 mb-1">เทียบกับ {comparisonPrevName}</p>
+                                        {renderMoM(stats.water_act, prevStats.water_act, 'ลบ.ม.')}
+                                    </div>
+                                </div>
+                                <div className="bg-gradient-to-br from-orange-50 to-white p-5 rounded-xl border border-orange-100 shadow-sm relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 p-4 opacity-10"><Fuel className="w-16 h-16 text-orange-600"/></div>
+                                    <h4 className="text-orange-800 font-bold mb-3 flex items-center"><Fuel className="w-4 h-4 mr-2"/> ภาพรวมน้ำมัน {isYearly && '(ทั้งปี)'}</h4>
+                                    <p className="text-xs text-slate-500 mb-1">{isYearly ? 'ปริมาณการใช้ทั้งหมด' : 'ปริมาณสะสมตั้งแต่ต้นปี (YTD)'}</p>
+                                    <p className="text-2xl font-bold text-orange-700 mb-8">{ytdStats.oil_total.toLocaleString()} <span className="text-sm font-normal">ลิตร</span></p>
+                                    <div className="pt-3 border-t border-orange-100">
+                                        <p className="text-xs text-slate-500 mb-1">เทียบกับ {comparisonPrevName}</p>
+                                        {renderMoM(stats.oil_total, prevStats.oil_total, 'ลิตร')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {(activeCategory === 'all' || activeCategory === 'elec') && (
+                        <section className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center justify-between mb-4 border-b pb-2">
+                                <div className="flex items-center text-blue-600">
+                                    <Zap className="w-6 h-6 mr-2 text-yellow-500" />
+                                    <h3 className="text-lg font-bold">ข้อมูลการใช้ไฟฟ้า {isYearly ? '(รวมทั้งปี)' : `(เฉพาะเดือน ${month})`}</h3>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <StatCard title="ค่ากลางรวม (หน่วย)" value={stats.elec_std} unit="kWh" />
+                                <StatCard title="ใช้จริงรวม (หน่วย)" value={stats.elec_act} unit="kWh" highlight alert={stats.elec_act > stats.elec_std && stats.elec_std > 0} />
+                                <StatCard title="ผลต่าง (หน่วย)" value={Math.abs(elecDiff)} unit="kWh" trend={elecDiff > 0 ? 'up' : 'down'} subtitle={elecDiff > 0 ? 'เกินค่ากลาง' : 'ประหยัดกว่าค่ากลาง'} />
+                                <StatCard title="คิดเป็นเงิน (บาท)" value={stats.elec_cost} unit="฿" format="currency" />
+                            </div>
+
+                            {(unit === 'overall' || isGroup) && (
+                                <div className="mt-8 pt-6 border-t border-slate-100 no-print">
+                                    <h4 className="font-bold text-slate-700 mb-4 text-sm text-center bg-slate-50 py-2 rounded">เปรียบเทียบการใช้ไฟฟ้ารายหน่วย ({comparisonSubtitle})</h4>
+                                    {viewMode === 'chart' ? (
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={allUnitsComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="unit" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
+                                                    <YAxis tick={{fontSize: 10}} />
+                                                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{fontSize: '12px'}} />
+                                                    <Legend wrapperStyle={{fontSize: 11, paddingTop: '10px'}} />
+                                                    <Bar dataKey="elec_prev" name={comparisonPrevName} fill="#94a3b8" radius={[2, 2, 0, 0]} />
+                                                    <Bar dataKey="elec_curr" name="ปัจจุบัน" fill="#3b82f6" radius={[2, 2, 0, 0]} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-100 text-slate-600">
+                                                        <th className="p-3 border-b border-slate-200">หน่วยงาน</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">ปัจจุบัน (หน่วย)</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">{comparisonPrevName} (หน่วย)</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">ผลต่าง %</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {allUnitsComparisonData.map(row => {
+                                                        const diffObj = calcDiff(row.elec_curr, row.elec_prev);
+                                                        return (
+                                                            <tr key={row.unit} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-3 font-medium text-slate-800">{row.unit}</td>
+                                                                <td className="p-3 text-right font-semibold text-blue-600">{row.elec_curr.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                                <td className="p-3 text-right text-slate-500">{row.elec_prev.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                                <td className={`p-3 text-right ${diffObj.color}`}>{diffObj.icon}{diffObj.text}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="mt-8 pt-6 border-t border-slate-100 no-print">
+                                <h4 className="font-bold text-slate-700 mb-4 text-sm text-center">{(unit === 'overall' || isGroup) ? `เปรียบเทียบ ใช้จริง vs ค่ากลาง (ไฟฟ้า)` : 'แนวโน้มการใช้ไฟฟ้ารายเดือน'}</h4>
+                                {viewMode === 'chart' ? (
+                                    <div className="h-64">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            {!(unit === 'overall' || isGroup) ? (
+                                                <ComposedChart data={chartData}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="name" />
+                                                    <YAxis />
+                                                    <Tooltip />
+                                                    <Legend />
+                                                    <Bar dataKey="elec_actual" name="ใช้จริง" fill="#eab308" radius={[4, 4, 0, 0]} />
+                                                    <Line type="monotone" dataKey="elec_std" name="ค่ากลาง" stroke="#334155" strokeWidth={2} strokeDasharray="5 5" dot={{r: 3}} />
+                                                </ComposedChart>
+                                            ) : (
+                                                <ComposedChart data={chartData}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="name" interval={0} angle={-30} textAnchor="end" tick={{fontSize: 10}} />
+                                                    <YAxis />
+                                                    <Tooltip />
+                                                    <Legend />
+                                                    <Bar dataKey="elec_actual" name="การใช้ไฟฟ้า (หน่วย)" radius={[4, 4, 0, 0]}>
+                                                        {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.elec_actual > entry.elec_std && entry.elec_std > 0 ? '#ef4444' : '#eab308'} />)}
+                                                    </Bar>
+                                                    <Line type="monotone" dataKey="elec_std" name="ค่ากลาง" stroke="#334155" strokeWidth={2} strokeDasharray="5 5" dot={{r: 3}} />
+                                                </ComposedChart>
+                                            )}
+                                        </ResponsiveContainer>
+                                        {(unit === 'overall' || isGroup) && <p className="text-center text-xs text-slate-400 mt-2">* แท่งสีแดงหมายถึงใช้งานเกินค่ากลางรวมที่ตั้งไว้</p>}
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-600">
+                                                    <th className="p-3 border-b border-slate-200">{!(unit === 'overall' || isGroup) ? 'เดือน' : 'หน่วยงาน'}</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right">ใช้จริง (หน่วย)</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right">ค่ากลาง (หน่วย)</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right">ผลต่าง %</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {chartData.map(row => {
+                                                    const actual = row.elec_actual || 0;
+                                                    const std = row.elec_std || 0;
+                                                    const diff = actual - std;
+                                                    const isOver = actual > std && std > 0;
+                                                    const diffPercent = std > 0 ? ((diff / std) * 100).toFixed(1) : '-';
+                                                    if(actual === 0 && std === 0) return null;
+                                                    return (
+                                                        <tr key={row.name} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-medium text-slate-800">{row.name}</td>
+                                                            <td className={`p-3 text-right font-semibold ${isOver ? 'text-rose-600' : 'text-blue-600'}`}>
+                                                                {actual.toLocaleString(undefined, {maximumFractionDigits:0})}
+                                                                {isOver && <AlertTriangle className="inline w-3 h-3 -mt-1 ml-1" title="เกินค่ากลาง"/>}
+                                                            </td>
+                                                            <td className="p-3 text-right text-slate-500">{std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                            <td className={`p-3 text-right ${isOver ? 'text-rose-600 font-medium' : (std > 0 ? 'text-emerald-600 font-medium' : 'text-slate-400')}`}>
+                                                                {std > 0 ? `${isOver ? '+' : ''}${diffPercent}%` : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                    {(activeCategory === 'all' || activeCategory === 'water') && (
+                        <section className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center mb-4 text-cyan-600 border-b pb-2">
+                                <Droplets className="w-6 h-6 mr-2" />
+                                <h3 className="text-lg font-bold">ข้อมูลการใช้น้ำประปา {isYearly ? '(รวมทั้งปี)' : `(เฉพาะเดือน ${month})`}</h3>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <StatCard title="ค่ากลางรวม (ลบ.ม.)" value={stats.water_std} unit="ลบ.ม." />
+                                <StatCard title="ใช้จริงรวม (ลบ.ม.)" value={stats.water_act} unit="ลบ.ม." highlight alert={stats.water_act > stats.water_std && stats.water_std > 0} />
+                                <StatCard title="ผลต่าง (ลบ.ม.)" value={Math.abs(waterDiff)} unit="ลบ.ม." trend={waterDiff > 0 ? 'up' : 'down'} subtitle={waterDiff > 0 ? 'เกินค่ากลาง' : 'ประหยัดกว่าค่ากลาง'} />
+                                <StatCard title="คิดเป็นเงิน (บาท)" value={stats.water_cost} unit="฿" format="currency" />
+                            </div>
+
+                            {(unit === 'overall' || isGroup) && (
+                                <div className="mt-8 pt-6 border-t border-slate-100 no-print">
+                                    <h4 className="font-bold text-slate-700 mb-4 text-sm text-center bg-slate-50 py-2 rounded">เปรียบเทียบการใช้น้ำประปารายหน่วย ({comparisonSubtitle})</h4>
+                                    {viewMode === 'chart' ? (
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={allUnitsComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="unit" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
+                                                    <YAxis tick={{fontSize: 10}} />
+                                                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{fontSize: '12px'}} />
+                                                    <Legend wrapperStyle={{fontSize: 11, paddingTop: '10px'}} />
+                                                    <Bar dataKey="water_prev" name={comparisonPrevName} fill="#94a3b8" radius={[2, 2, 0, 0]} />
+                                                    <Bar dataKey="water_curr" name="ปัจจุบัน" fill="#06b6d4" radius={[2, 2, 0, 0]} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-100 text-slate-600">
+                                                        <th className="p-3 border-b border-slate-200">หน่วยงาน</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">ปัจจุบัน (ลบ.ม.)</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">{comparisonPrevName} (ลบ.ม.)</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">ผลต่าง %</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {allUnitsComparisonData.map(row => {
+                                                        const diffObj = calcDiff(row.water_curr, row.water_prev);
+                                                        return (
+                                                            <tr key={row.unit} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-3 font-medium text-slate-800">{row.unit}</td>
+                                                                <td className="p-3 text-right font-semibold text-cyan-600">{row.water_curr.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                                <td className="p-3 text-right text-slate-500">{row.water_prev.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                                <td className={`p-3 text-right ${diffObj.color}`}>{diffObj.icon}{diffObj.text}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="mt-8 pt-6 border-t border-slate-100 no-print">
+                                <h4 className="font-bold text-slate-700 mb-4 text-sm text-center">{(unit === 'overall' || isGroup) ? `เปรียบเทียบ ใช้จริง vs ค่ากลาง (น้ำประปา)` : 'แนวโน้มการใช้น้ำประปารายเดือน'}</h4>
+                                {viewMode === 'chart' ? (
+                                    <div className="h-64">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            {!(unit === 'overall' || isGroup) ? (
+                                                <ComposedChart data={chartData}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                <XAxis dataKey="name" />
+                                                <YAxis />
+                                                <Tooltip />
+                                                <Legend />
+                                                <Bar dataKey="water_actual" name="ใช้จริง" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                                                <Line type="monotone" dataKey="water_std" name="ค่ากลาง" stroke="#334155" strokeWidth={2} strokeDasharray="5 5" dot={{r: 3}} />
+                                            </ComposedChart>
+                                            ) : (
+                                                <ComposedChart data={chartData}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="name" interval={0} angle={-30} textAnchor="end" tick={{fontSize: 10}} />
+                                                    <YAxis />
+                                                    <Tooltip />
+                                                    <Legend />
+                                                    <Bar dataKey="water_actual" name="การใช้น้ำ (ลบ.ม.)" radius={[4, 4, 0, 0]}>
+                                                        {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.water_actual > entry.water_std && entry.water_std > 0 ? '#ef4444' : '#06b6d4'} />)}
+                                                    </Bar>
+                                                    <Line type="monotone" dataKey="water_std" name="ค่ากลาง" stroke="#334155" strokeWidth={2} strokeDasharray="5 5" dot={{r: 3}} />
+                                                </ComposedChart>
+                                            )}
+                                        </ResponsiveContainer>
+                                        {(unit === 'overall' || isGroup) && <p className="text-center text-xs text-slate-400 mt-2">* แท่งสีแดงหมายถึงใช้งานเกินค่ากลางรวมที่ตั้งไว้</p>}
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-600">
+                                                    <th className="p-3 border-b border-slate-200">{!(unit === 'overall' || isGroup) ? 'เดือน' : 'หน่วยงาน'}</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right">ใช้จริง (ลบ.ม.)</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right">ค่ากลาง (ลบ.ม.)</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right">ผลต่าง %</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {chartData.map(row => {
+                                                    const actual = row.water_actual || 0;
+                                                    const std = row.water_std || 0;
+                                                    const diff = actual - std;
+                                                    const isOver = actual > std && std > 0;
+                                                    const diffPercent = std > 0 ? ((diff / std) * 100).toFixed(1) : '-';
+                                                    if(actual === 0 && std === 0) return null;
+                                                    return (
+                                                        <tr key={row.name} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-medium text-slate-800">{row.name}</td>
+                                                            <td className={`p-3 text-right font-semibold ${isOver ? 'text-rose-600' : 'text-cyan-600'}`}>
+                                                                {actual.toLocaleString(undefined, {maximumFractionDigits:0})}
+                                                                {isOver && <AlertTriangle className="inline w-3 h-3 -mt-1 ml-1" title="เกินค่ากลาง"/>}
+                                                            </td>
+                                                            <td className="p-3 text-right text-slate-500">{std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                            <td className={`p-3 text-right ${isOver ? 'text-rose-600 font-medium' : (std > 0 ? 'text-emerald-600 font-medium' : 'text-slate-400')}`}>
+                                                                {std > 0 ? `${isOver ? '+' : ''}${diffPercent}%` : '-'}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                    {(activeCategory === 'all' || activeCategory === 'oil') && (
+                        <section className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                            <div className="flex items-center mb-4 text-orange-600 border-b pb-2">
+                                <Fuel className="w-6 h-6 mr-2" />
+                                <h3 className="text-lg font-bold">ข้อมูลการใช้น้ำมันเชื้อเพลิง (ลิตร) {isYearly ? '(รวมทั้งปี)' : `(เฉพาะเดือน ${month})`}</h3>
+                            </div>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div className="border border-slate-200 rounded-lg p-5 bg-orange-50/30">
+                                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center"><span className="w-6 h-6 bg-orange-500 text-white rounded-full flex items-center justify-center mr-2 text-sm">1</span>น้ำมันปฏิบัติการ</h4>
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm"><span className="text-slate-600 font-medium">ดีเซล (Diesel)</span><span className="font-bold text-lg text-orange-700">{stats.oil_op_diesel.toLocaleString(undefined, {maximumFractionDigits:0})} ลิตร</span></div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm"><span className="text-slate-600 font-medium">เบนซิน (Benzene)</span><span className="font-bold text-lg text-orange-700">{stats.oil_op_benzene.toLocaleString(undefined, {maximumFractionDigits:0})} ลิตร</span></div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm"><span className="text-slate-600 font-medium">น้ำมันอากาศยาน</span><span className="font-bold text-lg text-orange-700">{stats.oil_op_aviation.toLocaleString(undefined, {maximumFractionDigits:0})} ลิตร</span></div>
+                                    </div>
+                                </div>
+                                <div className="border border-slate-200 rounded-lg p-5 bg-amber-50/30">
+                                    <h4 className="font-semibold text-slate-800 mb-4 flex items-center"><span className="w-6 h-6 bg-amber-500 text-white rounded-full flex items-center justify-center mr-2 text-sm">2</span>น้ำมันธุรการ</h4>
+                                    <div className="space-y-4">
+                                        <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm"><span className="text-slate-600 font-medium">ดีเซล (Diesel)</span><span className="font-bold text-lg text-amber-700">{stats.oil_adm_diesel.toLocaleString(undefined, {maximumFractionDigits:0})} ลิตร</span></div>
+                                        <div className="flex justify-between items-center bg-white p-3 rounded shadow-sm"><span className="text-slate-600 font-medium">เบนซิน (Benzene)</span><span className="font-bold text-lg text-amber-700">{stats.oil_adm_benzene.toLocaleString(undefined, {maximumFractionDigits:0})} ลิตร</span></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {(unit === 'overall' || isGroup) && (
+                                <div className="mt-8 pt-6 border-t border-slate-100 no-print">
+                                    <h4 className="font-bold text-slate-700 mb-4 text-sm text-center bg-slate-50 py-2 rounded">เปรียบเทียบการใช้น้ำมันเชื้อเพลิงรวมรายหน่วย ({comparisonSubtitle})</h4>
+                                    {viewMode === 'chart' ? (
+                                        <div className="h-64">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={allUnitsComparisonData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="unit" tick={{fontSize: 10}} interval={0} angle={-30} textAnchor="end" />
+                                                    <YAxis tick={{fontSize: 10}} />
+                                                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{fontSize: '12px'}} />
+                                                    <Legend wrapperStyle={{fontSize: 11, paddingTop: '10px'}} />
+                                                    <Bar dataKey="oil_prev" name={comparisonPrevName} fill="#94a3b8" radius={[2, 2, 0, 0]} />
+                                                    <Bar dataKey="oil_curr" name="ปัจจุบัน" fill="#f97316" radius={[2, 2, 0, 0]} />
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left border-collapse">
+                                                <thead>
+                                                    <tr className="bg-slate-100 text-slate-600">
+                                                        <th className="p-3 border-b border-slate-200">หน่วยงาน</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">ปัจจุบัน (ลิตร)</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">{comparisonPrevName} (ลิตร)</th>
+                                                        <th className="p-3 border-b border-slate-200 text-right">ผลต่าง %</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {allUnitsComparisonData.map(row => {
+                                                        const diffObj = calcDiff(row.oil_curr, row.oil_prev);
+                                                        return (
+                                                            <tr key={row.unit} className="hover:bg-slate-50 transition-colors">
+                                                                <td className="p-3 font-medium text-slate-800">{row.unit}</td>
+                                                                <td className="p-3 text-right font-semibold text-orange-600">{row.oil_curr.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                                <td className="p-3 text-right text-slate-500">{row.oil_prev.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                                <td className={`p-3 text-right ${diffObj.color}`}>{diffObj.icon}{diffObj.text}</td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="mt-8 pt-6 border-t border-slate-100 no-print">
+                                <h4 className="font-bold text-slate-700 mb-4 text-sm text-center">{!(unit === 'overall' || isGroup) ? 'แนวโน้มการใช้น้ำมันเชื้อเพลิงรายเดือน (จำแนกตามประเภท)' : `ปริมาณใช้น้ำมันเชื้อเพลิงรวมระหว่างหน่วยงาน`}</h4>
+                                {viewMode === 'chart' ? (
+                                    <div className="h-72">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            {!(unit === 'overall' || isGroup) ? (
+                                                <BarChart data={chartData}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="name" />
+                                                    <YAxis />
+                                                    <Tooltip cursor={{fill: 'transparent'}} />
+                                                    <Legend />
+                                                    <Bar dataKey="oil_op_diesel" name="ปฏิบัติการ-ดีเซล" stackId="a" fill="#f97316" />
+                                                    <Bar dataKey="oil_op_benzene" name="ปฏิบัติการ-เบนซิน" stackId="a" fill="#fbbf24" />
+                                                    <Bar dataKey="oil_op_aviation" name="ปฏิบัติการ-อากาศยาน" stackId="a" fill="#ef4444" />
+                                                    <Bar dataKey="oil_adm_diesel" name="ธุรการ-ดีเซล" stackId="a" fill="#8b5cf6" />
+                                                    <Bar dataKey="oil_adm_benzene" name="ธุรการ-เบนซิน" stackId="a" fill="#ec4899" radius={[4, 4, 0, 0]} />
+                                                </BarChart>
+                                            ) : (
+                                                <BarChart data={chartData}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                    <XAxis dataKey="name" interval={0} angle={-30} textAnchor="end" tick={{fontSize: 10}} />
+                                                    <YAxis />
+                                                    <Tooltip cursor={{fill: 'transparent'}} />
+                                                    <Legend />
+                                                    <Bar dataKey="oil_actual" name="ปริมาณน้ำมันรวม (ลิตร)" fill="#f97316" radius={[4, 4, 0, 0]} />
+                                                </BarChart>
+                                            )}
+                                        </ResponsiveContainer>
+                                    </div>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-600">
+                                                    <th className="p-3 border-b border-slate-200" rowSpan={2}>{!(unit === 'overall' || isGroup) ? 'เดือน' : 'หน่วยงาน'}</th>
+                                                    <th className="p-3 border-b border-slate-200 text-center border-l border-slate-200" colSpan={3}>ปฏิบัติการ (ลิตร)</th>
+                                                    <th className="p-3 border-b border-slate-200 text-center border-l border-slate-200" colSpan={2}>ธุรการ (ลิตร)</th>
+                                                    <th className="p-3 border-b border-slate-200 text-right border-l border-slate-200" rowSpan={2}>รวมทั้งหมด (ลิตร)</th>
+                                                </tr>
+                                                <tr className="bg-slate-50 text-slate-500 text-xs">
+                                                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 text-right">ดีเซล</th>
+                                                    <th className="p-2 border-b border-slate-200 text-right">เบนซิน</th>
+                                                    <th className="p-2 border-b border-slate-200 text-right">อากาศยาน</th>
+                                                    <th className="p-2 border-b border-slate-200 border-l border-slate-200 text-right">ดีเซล</th>
+                                                    <th className="p-2 border-b border-slate-200 text-right">เบนซิน</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {chartData.map(row => {
+                                                    if(row.oil_actual === 0) return null;
+                                                    return (
+                                                        <tr key={row.name} className="hover:bg-slate-50 transition-colors">
+                                                            <td className="p-3 font-medium text-slate-800">{row.name}</td>
+                                                            <td className="p-3 text-right text-slate-600 border-l border-slate-100">{row.oil_op_diesel.toLocaleString()}</td>
+                                                            <td className="p-3 text-right text-slate-600">{row.oil_op_benzene.toLocaleString()}</td>
+                                                            <td className="p-3 text-right text-slate-600">{row.oil_op_aviation.toLocaleString()}</td>
+                                                            <td className="p-3 text-right text-slate-600 border-l border-slate-100">{row.oil_adm_diesel.toLocaleString()}</td>
+                                                            <td className="p-3 text-right text-slate-600">{row.oil_adm_benzene.toLocaleString()}</td>
+                                                            <td className="p-3 text-right font-bold text-orange-600 border-l border-slate-100">{row.oil_actual.toLocaleString()}</td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                </div>
+            );
+        }
+
+        function DataEntryForm({ data, onSave, currentUser, globalMonth, selectedYear, hierarchy, onAddLog, showModal }) {
+            const [selectedUnit, setSelectedUnit] = useState(currentUser.role === 'admin' ? hierarchy.leaves[0] : currentUser.unit);
+            const [entryMonth, setEntryMonth] = useState(globalMonth === 'สรุปรายปี' ? 'ม.ค.' : globalMonth);
+            const [showSuccess, setShowSuccess] = useState(false);
+            const [attachedFiles, setAttachedFiles] = useState({ elec: null, water: null, oil: null });
+
+            const [formData, setFormData] = useState({
+                elec_std: '', elec_act: '', elec_cost: '',
+                water_std: '', water_act: '', water_cost: '',
+                oil_op_diesel: '', oil_op_benzene: '', oil_op_aviation: '',
+                oil_adm_diesel: '', oil_adm_benzene: ''
+            });
+
+            useEffect(() => {
+                const existing = data.find(d => d.unit === selectedUnit && d.month === entryMonth && d.year === selectedYear);
+                if (existing && existing.status === 'submitted') {
+                    setFormData({
+                        elec_std: existing.electricity?.standard || '', elec_act: existing.electricity?.actual || '', elec_cost: existing.electricity?.cost || '',
+                        water_std: existing.water?.standard || '', water_act: existing.water?.actual || '', water_cost: existing.water?.cost || '',
+                        oil_op_diesel: existing.oil?.operational?.diesel || '', oil_op_benzene: existing.oil?.operational?.benzene || '', oil_op_aviation: existing.oil?.operational?.aviation || '',
+                        oil_adm_diesel: existing.oil?.administrative?.diesel || '', oil_adm_benzene: existing.oil?.administrative?.benzene || ''
+                    });
+                } else {
+                    setFormData({
+                        elec_std: '', elec_act: '', elec_cost: '',
+                        water_std: '', water_act: '', water_cost: '',
+                        oil_op_diesel: '', oil_op_benzene: '', oil_op_aviation: '',
+                        oil_adm_diesel: '', oil_adm_benzene: ''
+                    });
+                }
+            }, [selectedUnit, entryMonth, selectedYear, data]);
+
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+            
+            const handleFileChange = (e, type) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setAttachedFiles(prev => ({ ...prev, [type]: file.name }));
+                }
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                const payload = {
+                    unit: selectedUnit,
+                    month: entryMonth,
+                    year: selectedYear,
+                    electricity: {
+                        standard: Number(formData.elec_std) || 0,
+                        actual: Number(formData.elec_act) || 0,
+                        cost: Number(formData.elec_cost) || 0,
+                    },
+                    water: {
+                        standard: Number(formData.water_std) || 0,
+                        actual: Number(formData.water_act) || 0,
+                        cost: Number(formData.water_cost) || 0,
+                    },
+                    oil: {
+                        operational: {
+                            diesel: Number(formData.oil_op_diesel) || 0,
+                            benzene: Number(formData.oil_op_benzene) || 0,
+                            aviation: Number(formData.oil_op_aviation) || 0,
+                        },
+                        administrative: {
+                            diesel: Number(formData.oil_adm_diesel) || 0,
+                            benzene: Number(formData.oil_adm_benzene) || 0,
+                        }
+                    }
+                };
+                await onSave(payload);
+                onAddLog('บันทึกข้อมูลรายงาน', `ส่งรายงานของหน่วย ${selectedUnit} ประจำเดือน ${entryMonth}`);
+                setShowSuccess(true);
+                setTimeout(() => setShowSuccess(false), 3000);
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div className="bg-blue-600 px-6 py-4 flex justify-between items-center text-white">
+                        <h3 className="font-bold text-lg flex items-center"><FileEdit className="w-5 h-5 mr-2"/> แบบฟอร์มบันทึกข้อมูลการใช้พลังงาน</h3>
+                    </div>
+                    
+                    <form onSubmit={handleSubmit} className="p-6 space-y-8">
+                        <div className="flex space-x-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-slate-700 mb-1">หน่วยงานที่รายงาน</label>
+                                {currentUser.role === 'admin' ? (
+                                    <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className="w-full border border-slate-300 rounded p-2 focus:ring-blue-500 focus:border-blue-500">
+                                        {hierarchy.parents.map(parent => (
+                                            <optgroup key={parent} label={hierarchy.dict[parent].length > 1 ? `กลุ่ม ${parent}` : parent}>
+                                                {hierarchy.dict[parent].map(u => <option key={u} value={u}>{u}</option>)}
+                                            </optgroup>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <div className="w-full border border-slate-300 rounded p-2 bg-slate-100 text-slate-600 cursor-not-allowed">
+                                        {currentUser.unit}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-sm font-medium text-slate-700 mb-1">ประจำเดือน / ปี</label>
+                                <div className="flex space-x-2">
+                                    <select value={entryMonth} onChange={(e) => setEntryMonth(e.target.value)} className="w-1/2 border border-slate-300 rounded p-2 focus:ring-blue-500 focus:border-blue-500">
+                                        {MONTHS.map(m => <option key={m} value={m}>เดือน {m}</option>)}
+                                    </select>
+                                    <div className="w-1/2 border border-slate-300 rounded p-2 bg-slate-100 text-slate-600">
+                                        ปีงบฯ {selectedYear}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-6">
+                                <div className="border border-slate-200 rounded p-4 bg-blue-50/30">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="font-bold text-blue-600 flex items-center"><Zap className="w-4 h-4 mr-2"/> ไฟฟ้า</h4>
+                                        <label className="cursor-pointer text-xs flex items-center bg-white border border-blue-200 text-blue-600 px-2 py-1 rounded hover:bg-blue-50">
+                                            <Upload className="w-3 h-3 mr-1" /> แนบหลักฐาน (บิล)
+                                            <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'elec')} />
+                                        </label>
+                                    </div>
+                                    {attachedFiles.elec && <p className="text-xs text-emerald-600 mb-2 border-b border-blue-100 pb-2">✓ แนบไฟล์: {attachedFiles.elec}</p>}
+                                    <div className="space-y-3">
+                                        <div><label className="text-sm text-slate-600 block">ค่ากลาง (หน่วย)</label><input type="number" name="elec_std" value={formData.elec_std} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                        <div><label className="text-sm text-slate-600 block">ใช้จริง (หน่วย)</label><input type="number" name="elec_act" value={formData.elec_act} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                        <div><label className="text-sm text-slate-600 block">คิดเป็นเงิน (บาท)</label><input type="number" name="elec_cost" value={formData.elec_cost} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                    </div>
+                                </div>
+
+                                <div className="border border-slate-200 rounded p-4 bg-cyan-50/30">
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="font-bold text-cyan-600 flex items-center"><Droplets className="w-4 h-4 mr-2"/> น้ำประปา</h4>
+                                        <label className="cursor-pointer text-xs flex items-center bg-white border border-cyan-200 text-cyan-600 px-2 py-1 rounded hover:bg-cyan-50">
+                                            <Upload className="w-3 h-3 mr-1" /> แนบหลักฐาน (บิล)
+                                            <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'water')} />
+                                        </label>
+                                    </div>
+                                    {attachedFiles.water && <p className="text-xs text-emerald-600 mb-2 border-b border-cyan-100 pb-2">✓ แนบไฟล์: {attachedFiles.water}</p>}
+                                    <div className="space-y-3">
+                                        <div><label className="text-sm text-slate-600 block">ค่ากลาง (ลบ.ม.)</label><input type="number" name="water_std" value={formData.water_std} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                        <div><label className="text-sm text-slate-600 block">ใช้จริง (ลบ.ม.)</label><input type="number" name="water_act" value={formData.water_act} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                        <div><label className="text-sm text-slate-600 block">คิดเป็นเงิน (บาท)</label><input type="number" name="water_cost" value={formData.water_cost} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="border border-slate-200 rounded p-4 h-fit bg-orange-50/30">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h4 className="font-bold text-orange-600 flex items-center"><Fuel className="w-4 h-4 mr-2"/> น้ำมันเชื้อเพลิง (ลิตร)</h4>
+                                    <label className="cursor-pointer text-xs flex items-center bg-white border border-orange-200 text-orange-600 px-2 py-1 rounded hover:bg-orange-50">
+                                        <Upload className="w-3 h-3 mr-1" /> แนบเอกสารเบิก
+                                        <input type="file" className="hidden" accept="image/*,.pdf" onChange={(e) => handleFileChange(e, 'oil')} />
+                                    </label>
+                                </div>
+                                {attachedFiles.oil && <p className="text-xs text-emerald-600 mb-4 border-b border-orange-100 pb-2">✓ แนบไฟล์: {attachedFiles.oil}</p>}
+                                
+                                <h5 className="font-semibold text-slate-700 bg-white border border-slate-200 p-2 rounded mb-2">1. น้ำมันปฏิบัติการ</h5>
+                                <div className="space-y-3 mb-6 px-2">
+                                    <div><label className="text-sm text-slate-600 block">ดีเซล</label><input type="number" name="oil_op_diesel" value={formData.oil_op_diesel} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                    <div><label className="text-sm text-slate-600 block">เบนซิน</label><input type="number" name="oil_op_benzene" value={formData.oil_op_benzene} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                    <div><label className="text-sm text-slate-600 block">อากาศยาน</label><input type="number" name="oil_op_aviation" value={formData.oil_op_aviation} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                </div>
+
+                                <h5 className="font-semibold text-slate-700 bg-white border border-slate-200 p-2 rounded mb-2">2. น้ำมันธุรการ</h5>
+                                <div className="space-y-3 px-2">
+                                    <div><label className="text-sm text-slate-600 block">ดีเซล</label><input type="number" name="oil_adm_diesel" value={formData.oil_adm_diesel} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                    <div><label className="text-sm text-slate-600 block">เบนซิน</label><input type="number" name="oil_adm_benzene" value={formData.oil_adm_benzene} onChange={handleChange} required className="w-full border rounded p-1.5" /></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end pt-4 border-t border-slate-200 items-center">
+                            {showSuccess && <span className="text-emerald-600 font-medium mr-4 flex items-center"><CheckCircle2 className="w-4 h-4 mr-1"/> บันทึกข้อมูลเข้า Google Sheets เรียบร้อย</span>}
+                            <button type="submit" className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 flex items-center">
+                                <Save className="w-4 h-4 mr-2" /> บันทึกและส่งรายงาน
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            );
+        }
+
+        // --- Status Tracking View ---
+        function StatusTracking({ data, month, year, hierarchy, showModal }) {
+            const currentMonthData = data.filter(d => d.month === month && d.year === year);
+            const submittedCount = currentMonthData.filter(d => d.status === 'submitted').length;
+            const pendingUnits = currentMonthData.filter(d => d.status === 'pending');
+
+            const handleLineNotify = () => {
+                if (pendingUnits.length === 0) return showModal({title: 'การแจ้งเตือน', message: 'ทุกหน่วยงานส่งรายงานครบถ้วนแล้ว\nไม่มีรายการต้องแจ้งเตือนครับ', type: 'alert'});
+                const unitNames = pendingUnits.map(u => u.unit).join('\n- ');
+                const msg = `[ระบบรายงานพลังงาน บก.ทท.]\nแจ้งเตือนประจำเดือน ${month} ปีงบฯ ${year}\n\nขณะนี้มี ${pendingUnits.length} หน่วยงานที่ยังไม่ได้ส่งรายงาน ได้แก่:\n- ${unitNames}\n\nโปรดเร่งดำเนินการบันทึกข้อมูลในระบบผ่านเว็บเบราว์เซอร์`;
+                showModal({
+                    title: 'จำลองการส่ง LINE Notify สำเร็จ!', 
+                    message: `ข้อความที่จะถูกส่งไปยังกลุ่ม LINE:\n\n${msg}`,
+                    type: 'alert'
+                });
+            };
+
+            return (
+                <div className="max-w-5xl mx-auto space-y-6">
+                    <div className="flex justify-end no-print">
+                        <button onClick={handleLineNotify} className="bg-[#00B900] hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium flex items-center shadow-sm">
+                            <MessageCircle className="w-5 h-5 mr-2" /> ส่งแจ้งเตือนผ่าน LINE (ทวงรายงาน)
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 text-center"><h4 className="text-slate-500 mb-1">หน่วยย่อยทั้งหมด (ที่ต้องรายงาน)</h4><p className="text-3xl font-bold">{hierarchy.leaves.length}</p></div>
+                        <div className="bg-emerald-50 p-4 rounded-lg shadow-sm border border-emerald-100 text-center"><h4 className="text-emerald-600 mb-1">รายงานแล้ว</h4><p className="text-3xl font-bold text-emerald-700">{submittedCount}</p></div>
+                        <div className="bg-rose-50 p-4 rounded-lg shadow-sm border border-rose-100 text-center"><h4 className="text-rose-600 mb-1">ยังไม่รายงาน</h4><p className="text-3xl font-bold text-rose-700">{pendingUnits.length}</p></div>
+                    </div>
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center"><h3 className="font-bold text-slate-700">สถานะการส่งรายงาน เดือน {month} ปีงบฯ {year}</h3></div>
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="bg-slate-100 text-slate-500 text-sm border-b">
+                                    <th className="px-6 py-3 font-medium">สังกัดหน่วยแม่</th>
+                                    <th className="px-6 py-3 font-medium">หน่วยงานย่อย</th>
+                                    <th className="px-6 py-3 font-medium text-center">สถานะ</th>
+                                    <th className="px-6 py-3 font-medium text-right">การจัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {hierarchy.parents.map(parent => {
+                                    return hierarchy.dict[parent].map((child, index) => {
+                                        const rowData = currentMonthData.find(d => d.unit === child);
+                                        if(!rowData) return null;
+                                        return (
+                                            <tr key={rowData.id} className="hover:bg-slate-50">
+                                                {index === 0 && <td rowSpan={hierarchy.dict[parent].length} className="px-6 py-4 font-bold text-slate-800 bg-slate-50/50 border-r border-slate-100 align-top">{parent}</td>}
+                                                <td className="px-6 py-4 font-medium text-slate-700">{rowData.unit}</td>
+                                                <td className="px-6 py-4 text-center">
+                                                    {rowData.status === 'submitted' ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800"><CheckCircle2 className="w-3 h-3 mr-1" /> ส่งแล้ว</span> : <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800"><XCircle className="w-3 h-3 mr-1" /> ค้างส่ง</span>}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {rowData.status === 'pending' ? <button onClick={handleLineNotify} className="text-sm font-medium text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-1 rounded">แจ้งเตือน</button> : <span className="text-sm text-slate-400">ครบถ้วน</span>}
+                                                </td>
+                                            </tr>
+                                        );
+                                    });
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        function ReportExport({ data, month, year, hierarchy, currentUser }) {
+            const [reportType, setReportType] = useState('table');
+            const isYearly = month === 'สรุปรายปี';
+            const currentData = data.filter(d => d.year === year && (isYearly ? true : d.month === month) && d.status === 'submitted');
+            const grandTotals = aggregateTotals(currentData);
+
+            const exportCSV = () => {
+                let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+                if (isYearly) {
+                    const headers = ['เดือน', 'ไฟฟ้า_ค่ากลาง', 'ไฟฟ้า_ใช้จริง', 'ไฟฟ้า_เป็นเงิน', 'ประปา_ค่ากลาง', 'ประปา_ใช้จริง', 'ประปา_เป็นเงิน', 'น้ำมันรวม'];
+                    const rows = MONTHS.map(m => {
+                        const mData = data.filter(d => d.year === year && d.month === m && d.status === 'submitted');
+                        const t = aggregateTotals(mData);
+                        return [m, t.elec_std, t.elec_act, t.elec_cost, t.water_std, t.water_act, t.water_cost, t.oil_total];
+                    });
+                    csvContent += [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+                } else {
+                    const headers = ['หน่วยงาน', 'ปี', 'เดือน', 'ไฟฟ้า_ค่ากลาง', 'ไฟฟ้า_ใช้จริง', 'ไฟฟ้า_เป็นเงิน', 'ประปา_ค่ากลาง', 'ประปา_ใช้จริง', 'ประปา_เป็นเงิน', 'น้ำมัน_ปฏิบัติการดีเซล', 'น้ำมัน_ปฏิบัติการเบนซิน', 'น้ำมัน_ปฏิบัติการอากาศยาน', 'น้ำมัน_ธุรการดีเซล', 'น้ำมัน_ธุรการเบนซิน'];
+                    const rows = currentData.map(d => [
+                        d.unit, d.year, d.month, 
+                        d.electricity?.standard || 0, d.electricity?.actual || 0, d.electricity?.cost || 0,
+                        d.water?.standard || 0, d.water?.actual || 0, d.water?.cost || 0,
+                        d.oil?.operational?.diesel || 0, d.oil?.operational?.benzene || 0, d.oil?.operational?.aviation || 0,
+                        d.oil?.administrative?.diesel || 0, d.oil?.administrative?.benzene || 0
+                    ]);
+                    csvContent += [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+                }
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `Energy_Report_${isYearly ? 'Year' : month}_${year}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            };
+
+            const currentDateStr = new Date().toLocaleDateString('th-TH', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            return (
+                <div className="bg-white p-8 max-w-6xl mx-auto shadow-sm border border-slate-200 print:border-none print:shadow-none print:p-0 relative rounded-xl print:max-w-none">
+                    <div className="absolute top-4 right-4 no-print flex space-x-2">
+                        <button onClick={() => window.print()} className="flex items-center bg-slate-800 text-white px-4 py-2 rounded-lg hover:bg-slate-900 transition-colors text-sm font-medium shadow-sm">
+                            <Printer className="w-4 h-4 mr-2" /> พิมพ์รายงาน (PDF)
+                        </button>
+                        <button onClick={exportCSV} className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-sm">
+                            <Download className="w-4 h-4 mr-2" /> ดาวน์โหลด Excel (CSV)
+                        </button>
+                    </div>
+
+                    <div className="text-center mb-10 pt-4">
+                        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-blue-100 no-print">
+                            <FileText className="w-10 h-10 text-blue-600" />
+                        </div>
+                        <h1 className="text-2xl font-bold font-serif mb-2 text-slate-800">รายงานสรุปการใช้พลังงาน กองบัญชาการกองทัพไทย (บก.ทท.)</h1>
+                        <p className="text-lg text-slate-600 font-medium">ประจำ{isYearly ? `ปีงบประมาณ ${year}` : `เดือน ${month} ปีงบประมาณ ${year}`}</p>
+                    </div>
+
+                    {isYearly && (
+                        <div className="mb-12">
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse border border-slate-300 text-[13px] sm:text-sm">
+                                    <thead>
+                                        <tr className="bg-[#1e293b] text-white">
+                                            <th className="border border-slate-400 p-2.5 text-center align-middle" rowSpan={2}>เดือน</th>
+                                            <th className="border border-slate-400 p-2 text-center" colSpan={4}>ไฟฟ้า</th>
+                                            <th className="border border-slate-400 p-2 text-center" colSpan={4}>น้ำประปา</th>
+                                            <th className="border border-slate-400 p-2 text-center">น้ำมัน</th>
+                                        </tr>
+                                        <tr className="bg-[#334155] text-slate-100 font-medium">
+                                            <th className="border border-slate-400 p-2 text-center">ค่ากลาง<br/>(หน่วย)</th>
+                                            <th className="border border-slate-400 p-2 text-center">ใช้จริง<br/>(หน่วย)</th>
+                                            <th className="border border-slate-400 p-2 text-center">ผลต่าง</th>
+                                            <th className="border border-slate-400 p-2 text-center">จำนวนเงิน(฿)</th>
+                                            <th className="border border-slate-400 p-2 text-center">ค่ากลาง<br/>(ลบ.ม.)</th>
+                                            <th className="border border-slate-400 p-2 text-center">ใช้จริง<br/>(ลบ.ม.)</th>
+                                            <th className="border border-slate-400 p-2 text-center">ผลต่าง</th>
+                                            <th className="border border-slate-400 p-2 text-center">จำนวนเงิน(฿)</th>
+                                            <th className="border border-slate-400 p-2 text-center">ใช้จริง<br/>(ลิตร)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {MONTHS.map((m, idx) => {
+                                            const mData = data.filter(d => d.year === year && d.month === m && d.status === 'submitted');
+                                            const t = aggregateTotals(mData);
+                                            if (mData.length === 0) return null;
+
+                                            const elecDiff = t.elec_act - t.elec_std;
+                                            const waterDiff = t.water_act - t.water_std;
+
+                                            return (
+                                                <tr key={m} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                                                    <td className="border border-slate-300 p-2.5 text-center font-bold text-slate-800">{m}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right">{t.elec_std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right font-bold text-blue-700">{t.elec_act.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                    <td className={`border border-slate-300 p-2.5 text-right font-medium ${elecDiff > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{elecDiff > 0 ? '+' : ''}{elecDiff.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right">{t.elec_cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right">{t.water_std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right font-bold text-cyan-700">{t.water_act.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                    <td className={`border border-slate-300 p-2.5 text-right font-medium ${waterDiff > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{waterDiff > 0 ? '+' : ''}{waterDiff.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right">{t.water_cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                                    <td className="border border-slate-300 p-2.5 text-right font-bold text-[#c2410c]">{t.oil_total.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                    <tfoot>
+                                        <tr className="bg-[#f1f5f9] font-bold border-y-2 border-slate-400 text-slate-800">
+                                            <td className="p-3 text-center text-sm">รวมทั้งสิ้น<br/>(YTD)</td>
+                                            <td className="text-right p-3 border border-slate-300">{grandTotals.elec_std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            <td className="text-right p-3 border border-slate-300 text-blue-800 text-base">{grandTotals.elec_act.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            <td className="text-right p-3 border border-slate-300">{(grandTotals.elec_act - grandTotals.elec_std).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            <td className="text-right p-3 border border-slate-300">{grandTotals.elec_cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                            <td className="text-right p-3 border border-slate-300">{grandTotals.water_std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            <td className="text-right p-3 border border-slate-300 text-cyan-800 text-base">{grandTotals.water_act.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            <td className="text-right p-3 border border-slate-300">{(grandTotals.water_act - grandTotals.water_std).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            <td className="text-right p-3 border border-slate-300">{grandTotals.water_cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                            <td className="text-right p-3 border border-slate-300 text-[#9a3412] text-base">{grandTotals.oil_total.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center mt-6 page-break-before-always">
+                        <span className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mr-3 text-sm shadow-sm border border-blue-200">1</span> 
+                        {isYearly ? 'สรุปการใช้พลังงานแยกตามหน่วยงาน (ยอดสะสมทั้งปี)' : 'สรุปข้อมูลการใช้ ไฟฟ้า และ น้ำประปา'}
+                    </h3>
+                    <div className="overflow-x-auto mb-12">
+                        <table className="w-full border-collapse border border-slate-300 text-[13px] sm:text-sm">
+                            <thead>
+                                <tr className="bg-[#1e293b] text-white">
+                                    <th className="border border-slate-400 p-2.5 text-center align-middle" rowSpan={2} colSpan={2}>หน่วยงาน / สังกัด</th>
+                                    <th className="border border-slate-400 p-2 text-center" colSpan={4}>ไฟฟ้า (kWh)</th>
+                                    <th className="border border-slate-400 p-2 text-center" colSpan={4}>น้ำประปา (ลบ.ม.)</th>
+                                </tr>
+                                <tr className="bg-[#334155] text-slate-100 font-medium">
+                                    <th className="border border-slate-400 p-2 text-center">ค่ากลาง</th>
+                                    <th className="border border-slate-400 p-2 text-center">ใช้จริง</th>
+                                    <th className="border border-slate-400 p-2 text-center">ผลต่าง</th>
+                                    <th className="border border-slate-400 p-2 text-center">จำนวนเงิน(฿)</th>
+                                    <th className="border border-slate-400 p-2 text-center">ค่ากลาง</th>
+                                    <th className="border border-slate-400 p-2 text-center">ใช้จริง</th>
+                                    <th className="border border-slate-400 p-2 text-center">ผลต่าง</th>
+                                    <th className="border border-slate-400 p-2 text-center">จำนวนเงิน(฿)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {hierarchy.parents.map(parent => {
+                                    return hierarchy.dict[parent].map((child, index) => {
+                                        let d;
+                                        if (isYearly) {
+                                            const yearDataForUnit = data.filter(row => row.year === year && row.unit === child && row.status === 'submitted');
+                                            if (yearDataForUnit.length === 0) return null;
+                                            const t = aggregateTotals(yearDataForUnit);
+                                            d = { id: `${child}-yearly`, unit: child, electricity: { standard: t.elec_std, actual: t.elec_act, cost: t.elec_cost }, water: { standard: t.water_std, actual: t.water_act, cost: t.water_cost } };
+                                        } else {
+                                            d = currentData.find(row => row.unit === child);
+                                            if (!d) return null;
+                                        }
+
+                                        const elecDiff = d.electricity.actual - d.electricity.standard;
+                                        const waterDiff = d.water.actual - d.water.standard;
+                                        
+                                        let parentRowSpan = 0;
+                                        if (index === 0) {
+                                            parentRowSpan = hierarchy.dict[parent].filter(c => {
+                                                if (isYearly) return data.some(row => row.year === year && row.unit === c && row.status === 'submitted');
+                                                return currentData.find(r => r.unit === c);
+                                            }).length;
+                                        }
+
+                                        return (
+                                            <tr key={d.id} className="bg-white">
+                                                {index === 0 && parentRowSpan > 0 && <td rowSpan={parentRowSpan} className="border border-slate-300 p-2.5 font-bold text-slate-800 align-top">{parent}</td>}
+                                                <td className="border border-slate-300 p-2.5 pl-4 text-slate-700 font-medium whitespace-nowrap"><span className="mr-2 text-slate-400">-</span>{d.unit}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.electricity.standard.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right font-bold text-blue-700">{d.electricity.actual.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className={`border border-slate-300 p-2.5 text-right font-medium ${elecDiff > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{elecDiff > 0 ? '+' : ''}{elecDiff.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.electricity.cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                                
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.water.standard.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right font-bold text-cyan-700">{d.water.actual.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className={`border border-slate-300 p-2.5 text-right font-medium ${waterDiff > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{waterDiff > 0 ? '+' : ''}{waterDiff.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.water.cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                            </tr>
+                                        );
+                                    });
+                                })}
+                            </tbody>
+                            {!isYearly && (
+                                <tfoot>
+                                    <tr className="bg-[#f1f5f9] font-bold border-y-2 border-slate-400 text-slate-800">
+                                        <td colSpan={2} className="p-3 text-center">รวมทั้งสิ้น (เดือน {month})</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.elec_std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 text-blue-800 border border-slate-300 text-base">{grandTotals.elec_act.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{(grandTotals.elec_act - grandTotals.elec_std).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.elec_cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.water_std.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 text-cyan-800 border border-slate-300 text-base">{grandTotals.water_act.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{(grandTotals.water_act - grandTotals.water_std).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.water_cost.toLocaleString(undefined, {maximumFractionDigits:2})}</td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
+
+                    <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center mt-12 page-break-before-always">
+                        <span className="w-7 h-7 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center mr-3 text-sm shadow-sm border border-blue-200">{isYearly ? '2' : '2'}</span>
+                        ข้อมูลการใช้น้ำมันเชื้อเพลิง (ลิตร)
+                    </h3>
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse border border-slate-300 text-[13px] sm:text-sm">
+                            <thead>
+                                <tr className="bg-[#1e293b] text-white">
+                                    <th className="border border-slate-400 p-2.5 text-center align-middle" rowSpan={2} colSpan={2}>หน่วยงาน / สังกัด</th>
+                                    <th className="border border-slate-400 p-2 text-center" colSpan={3}>ปฏิบัติการ</th>
+                                    <th className="border border-slate-400 p-2 text-center" colSpan={2}>ธุรการ</th>
+                                    <th className="border border-slate-400 p-2 text-center align-middle" rowSpan={2}>รวม (ลิตร)</th>
+                                </tr>
+                                <tr className="bg-[#334155] text-slate-100 font-medium">
+                                    <th className="border border-slate-400 p-2 text-center">ดีเซล</th>
+                                    <th className="border border-slate-400 p-2 text-center">เบนซิน</th>
+                                    <th className="border border-slate-400 p-2 text-center">อากาศยาน</th>
+                                    <th className="border border-slate-400 p-2 text-center">ดีเซล</th>
+                                    <th className="border border-slate-400 p-2 text-center">เบนซิน</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {hierarchy.parents.map(parent => {
+                                    return hierarchy.dict[parent].map((child, index) => {
+                                        let d;
+                                        if (isYearly) {
+                                            const yearDataForUnit = data.filter(row => row.year === year && row.unit === child && row.status === 'submitted');
+                                            if (yearDataForUnit.length === 0) return null;
+                                            const t = aggregateTotals(yearDataForUnit);
+                                            d = { id: `${child}-yearly-oil`, unit: child, oil: { operational: { diesel: t.oil_op_diesel, benzene: t.oil_op_benzene, aviation: t.oil_op_aviation }, administrative: { diesel: t.oil_adm_diesel, benzene: t.oil_adm_benzene } } };
+                                        } else {
+                                            d = currentData.find(row => row.unit === child);
+                                            if (!d) return null; 
+                                        }
+
+                                        let parentRowSpan = 0;
+                                        if (index === 0) {
+                                            parentRowSpan = hierarchy.dict[parent].filter(c => {
+                                                if (isYearly) return data.some(row => row.year === year && row.unit === c && row.status === 'submitted');
+                                                return currentData.find(r => r.unit === c);
+                                            }).length;
+                                        }
+
+                                        return (
+                                            <tr key={`oil-${d.id}`} className="bg-white">
+                                                {index === 0 && parentRowSpan > 0 && <td rowSpan={parentRowSpan} className="border border-slate-300 p-2.5 font-bold bg-slate-100 text-slate-800 align-top">{parent}</td>}
+                                                <td className="border border-slate-300 p-2.5 pl-4 text-slate-700 font-medium whitespace-nowrap"><span className="mr-2 text-slate-400">-</span>{d.unit}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.oil.operational.diesel.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.oil.operational.benzene.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.oil.operational.aviation.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.oil.administrative.diesel.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right">{d.oil.administrative.benzene.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                                <td className="border border-slate-300 p-2.5 text-right font-bold text-[#c2410c]">{getOilTotal(d.oil).toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                            </tr>
+                                        );
+                                    });
+                                })}
+                            </tbody>
+                            {!isYearly && (
+                                <tfoot>
+                                    <tr className="bg-[#f1f5f9] font-bold border-y-2 border-slate-400 text-slate-800">
+                                        <td colSpan={2} className="p-3 text-center">รวมทั้งสิ้น (เดือน {month})</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.oil_op_diesel.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.oil_op_benzene.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.oil_op_aviation.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.oil_adm_diesel.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 border border-slate-300">{grandTotals.oil_adm_benzene.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                        <td className="text-right p-3 text-[#9a3412] border border-slate-300 text-base">{grandTotals.oil_total.toLocaleString(undefined, {maximumFractionDigits:0})}</td>
+                                    </tr>
+                                </tfoot>
+                            )}
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- MAIN APP COMPONENT ---
+        function EnergyReportApp() {
+            // โหลดสถานะ
+            const [isLoading, setIsLoading] = useState(true);
+            const [isDbConnected, setIsDbConnected] = useState(false);
+            
+            // ข้อมูลที่ดึงจาก Google Sheets
+            const [dbData, setDbData] = useState([]);
+            const [unitHierarchy, setUnitHierarchy] = useState(DEFAULT_HIERARCHY);
+            const [unitPasswords, setUnitPasswords] = useState({});
+            const [standards, setStandards] = useState({});
+            const [logs, setLogs] = useState([]);
+            
+            // ข้อมูลผู้ใช้งาน
+            const [currentUser, setCurrentUser] = useState(null);
+            
+            // หน้าต่างแจ้งเตือน
+            const [modalConfig, setModalConfig] = useState({ isOpen: false });
+            const showModal = (config) => setModalConfig({ ...config, isOpen: true });
+            const hideModal = () => setModalConfig({ isOpen: false });
+
+            const hierarchy = useMemo(() => ({
+                dict: unitHierarchy,
+                parents: Object.keys(unitHierarchy),
+                leaves: Object.values(unitHierarchy).flat()
+            }), [unitHierarchy]);
+
+            // ดึงข้อมูลครั้งแรกเมื่อเปิดหน้าเว็บ
+            useEffect(() => {
+                fetch(GOOGLE_SCRIPT_URL)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.settings) {
+                            if (data.settings.hierarchy) setUnitHierarchy(data.settings.hierarchy);
+                            if (data.settings.passwords) setUnitPasswords(data.settings.passwords);
+                            
+                            // แตกข้อมูล Standards ออกตามปี
+                            const loadedStandards = {};
+                            Object.keys(data.settings).forEach(key => {
+                                if (key.startsWith('standards_')) {
+                                    const year = key.replace('standards_', '');
+                                    loadedStandards[year] = data.settings[key];
+                                }
+                            });
+                            setStandards(loadedStandards);
+                        }
+                        
+                        if (data.reports) setDbData(data.reports);
+                        if (data.logs) {
+                            data.logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                            setLogs(data.logs);
+                        }
+                        
+                        setIsDbConnected(true);
+                        setIsLoading(false);
+                    })
+                    .catch(err => {
+                        console.error("Error loading data from Google Sheets:", err);
+                        setIsLoading(false);
+                    });
+            }, []);
+
+            // รวมข้อมูลเข้าด้วยกันและสร้างบรรทัด "ยังไม่รายงาน (Pending)" อัตโนมัติ
+            const appData = useMemo(() => {
+                const merged = [];
+                hierarchy.leaves.forEach(unit => {
+                    YEARS.forEach(year => {
+                        MONTHS.forEach(month => {
+                            const id = `${unit}-${month}-${year}`;
+                            const existing = dbData.find(d => d.id === id);
+                            
+                            if (existing) {
+                                // ดึงค่ามาตรฐานมาใส่
+                                if (standards[year] && standards[year][unit]) {
+                                    if (existing.electricity) existing.electricity.standard = Number(standards[year][unit].elec) || 0;
+                                    if (existing.water) existing.water.standard = Number(standards[year][unit].water) || 0;
+                                }
+                                merged.push(existing);
+                            } else {
+                                // ถ้ายังไม่มีข้อมูล ให้สร้าง Template สถานะ Pending ขึ้นมาแทน
+                                merged.push({
+                                    id, unit, month, year, status: 'pending',
+                                    electricity: null, water: null, oil: null
+                                });
+                            }
+                        });
+                    });
+                });
+                return merged;
+            }, [dbData, hierarchy.leaves, standards]);
+
+            const [currentView, setCurrentView] = useState('dashboard');
+            const [activeCategory, setActiveCategory] = useState('all'); 
+            const [selectedUnit, setSelectedUnit] = useState('overall');
+            const [selectedMonth, setSelectedMonth] = useState('สรุปรายปี');
+            const [selectedYear, setSelectedYear] = useState('2569'); 
+            const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+            useEffect(() => { if (currentView === 'tracking' && selectedMonth === 'สรุปรายปี') setSelectedMonth('เม.ย.'); }, [currentView, selectedMonth]);
+
+            const handleLogin = (role, unit) => {
+                setCurrentUser({ role, unit });
+                if (role === 'user') { setSelectedUnit(unit); setCurrentView('data_entry'); if(selectedMonth === 'สรุปรายปี') setSelectedMonth('ม.ค.'); }
+                else { setSelectedUnit('overall'); setCurrentView('dashboard'); }
+            };
+
+            const handlePrint = () => window.print();
+
+            // ฟังก์ชันกลางในการส่ง POST Request ไปยัง Google Sheets
+            const postToGoogleSheets = async (action, dataPayload, key = null) => {
+                const payload = { action, data: dataPayload };
+                if (key) payload.key = key;
+                
+                try {
+                    await fetch(GOOGLE_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify(payload)
+                    });
+                } catch (e) {
+                    console.error("Save failed:", e);
+                    throw new Error("เกิดข้อผิดพลาดในการบันทึกข้อมูลไปยัง Google Sheets");
+                }
+            };
+
+            const addAuditLog = async (action, details) => {
+                const newLog = {
+                    id: Date.now().toString(), timestamp: new Date().toLocaleString('th-TH'),
+                    user: currentUser?.role === 'admin' ? 'ผู้ดูแลระบบ' : (currentUser?.role === 'executive' ? 'ผู้บริหาร' : currentUser?.unit),
+                    role: currentUser?.role, action, details
+                };
+                setLogs(prev => [newLog, ...prev]);
+                await postToGoogleSheets('addLog', newLog);
+            };
+
+            const handleSaveData = async (newData) => {
+                const id = `${newData.unit}-${newData.month}-${newData.year}`;
+                const payload = { ...newData, id, status: 'submitted' };
+                
+                // อัปเดต UI ทันที
+                setDbData(prev => {
+                    const index = prev.findIndex(d => d.id === id);
+                    if (index !== -1) { const updated = [...prev]; updated[index] = payload; return updated; }
+                    return [...prev, payload];
+                });
+                
+                // ส่งไปบันทึก
+                await postToGoogleSheets('saveReport', payload);
+            };
+
+            const handleUpdateStandards = async (targetYear, newStandards) => {
+                setStandards(prev => ({...prev, [targetYear]: newStandards}));
+                await postToGoogleSheets('saveSettings', newStandards, `standards_${targetYear}`);
+                showModal({title: 'สำเร็จ', message: `บันทึกการตั้งค่า "ค่ากลาง" สำหรับปีงบประมาณ ${targetYear} เรียบร้อยแล้ว!`, type: 'alert'});
+            };
+
+            const handleUpdateHierarchy = async (newDict) => {
+                setUnitHierarchy(newDict);
+                await postToGoogleSheets('saveSettings', newDict, 'hierarchy');
+            };
+
+            const handleUpdatePasswords = async (newPwds) => {
+                setUnitPasswords(newPwds);
+                addAuditLog('ตั้งค่ารหัสผ่าน', 'อัปเดตรหัสผ่านของหน่วยงาน');
+                await postToGoogleSheets('saveSettings', newPwds, 'passwords');
+                showModal({title: 'สำเร็จ', message: 'บันทึกรหัสผ่านลงฐานข้อมูลเรียบร้อยแล้ว', type: 'alert'});
+            };
+
+            if (isLoading) {
+                return (
+                    <div className="flex h-screen items-center justify-center bg-slate-50 flex-col">
+                        <div className="loader mb-4"></div>
+                        <h2 className="text-xl font-bold text-slate-700">กำลังเชื่อมต่อกับฐานข้อมูล...</h2>
+                        <p className="text-slate-500 mt-2 text-sm">ระบบกำลังดึงข้อมูลจาก Google Sheets ของคุณ</p>
+                    </div>
+                );
+            }
+
+            if (!currentUser) return <LoginScreen onLogin={handleLogin} hierarchy={hierarchy} unitPasswords={unitPasswords} />;
+
+            const renderContent = () => {
+                if (currentView === 'tracking') return <StatusTracking data={appData} month={selectedMonth} year={selectedYear} hierarchy={hierarchy} showModal={showModal} />;
+                if (currentView === 'report') return <ReportExport data={appData} month={selectedMonth} year={selectedYear} hierarchy={hierarchy} currentUser={currentUser} />;
+                if (currentView === 'data_entry') return <DataEntryForm data={appData} onSave={handleSaveData} currentUser={currentUser} selectedYear={selectedYear} globalMonth={selectedMonth} hierarchy={hierarchy} onAddLog={addAuditLog} showModal={showModal} />;
+                if (currentView === 'standard_settings') return <StandardSettings data={appData} year={selectedYear} onUpdateStandards={handleUpdateStandards} hierarchy={hierarchy} onAddLog={addAuditLog} showModal={showModal} />;
+                if (currentView === 'unit_settings') return <UnitSettings hierarchy={hierarchy} onUpdateHierarchy={handleUpdateHierarchy} unitPasswords={unitPasswords} onUpdatePasswords={handleUpdatePasswords} onAddLog={addAuditLog} showModal={showModal} />;
+                if (currentView === 'audit_logs') return <AuditLogs logs={logs} />;
+                return <Dashboard unit={selectedUnit} month={selectedMonth} year={selectedYear} data={appData} activeCategory={activeCategory} hierarchy={hierarchy} currentUser={currentUser} />;
+            };
+
+            return (
+                <div className="flex h-screen bg-slate-100 text-slate-800">
+                    <Modal {...modalConfig} onClose={hideModal} />
+                    <aside className={`bg-slate-900 text-slate-300 w-64 flex-shrink-0 transition-all duration-300 ${isSidebarOpen ? 'block' : 'hidden'} no-print flex flex-col`}>
+                        <div className="p-4 bg-slate-950 text-white flex items-center justify-between">
+                            <h1 className="text-xl font-bold text-yellow-500">รายงานพลังงาน<br/><span className="text-sm font-normal text-slate-300">บก.ทท.</span></h1>
+                        </div>
+                        <div className="p-4 bg-slate-800 border-b border-slate-700 flex justify-between items-center">
+                            <div className="text-sm">
+                                <p className="text-slate-400 text-xs">เข้าสู่ระบบโดย:</p>
+                                <p className="font-medium text-white text-xs mt-0.5 px-2 py-0.5 rounded bg-slate-700 inline-block truncate max-w-[150px]" title={currentUser.role === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : currentUser.role === 'executive' ? 'ผู้บริหาร (Executive)' : `หน่วย: ${currentUser.unit}`}>
+                                    {currentUser.role === 'admin' ? 'ผู้ดูแลระบบ (Admin)' : currentUser.role === 'executive' ? 'ผู้บริหาร (Executive)' : `หน่วย: ${currentUser.unit}`}
+                                </p>
+                            </div>
+                            <button onClick={() => setCurrentUser(null)} title="ออกจากระบบ" className="text-slate-400 hover:text-rose-400"><LogOut className="w-5 h-5" /></button>
+                        </div>
+                        <nav className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+                            <p className="text-xs uppercase tracking-wider text-slate-500 mb-2 mt-2">หน้าแสดงผล</p>
+                            <button onClick={() => { setCurrentView('dashboard'); setActiveCategory('all'); }} className={`w-full flex items-center p-2 rounded ${currentView === 'dashboard' && activeCategory === 'all' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>
+                                <LayoutDashboard className="w-5 h-5 mr-3" /> ภาพรวม {(currentUser.role === 'admin' || currentUser.role === 'executive') ? 'บก.ทท.' : currentUser.unit}
+                            </button>
+                            {[ { id: 'elec', label: 'ไฟฟ้า', icon: Zap, color: 'text-yellow-400' }, { id: 'water', label: 'น้ำประปา', icon: Droplets, color: 'text-cyan-400' }, { id: 'oil', label: 'น้ำมันเชื้อเพลิง', icon: Fuel, color: 'text-orange-400' } ].map(cat => (
+                                <button key={cat.id} onClick={() => { setCurrentView('dashboard'); setActiveCategory(cat.id); }} className={`w-full flex items-center p-2 rounded ${currentView === 'dashboard' && activeCategory === cat.id ? 'bg-slate-700 text-white font-bold' : 'hover:bg-slate-800 text-slate-300'}`}>
+                                    <cat.icon className={`w-5 h-5 mr-3 ${cat.color}`} /> {cat.label}
+                                </button>
+                            ))}
+                            <p className="text-xs uppercase tracking-wider text-slate-500 mt-8 mb-2">การดำเนินการ</p>
+                            {currentUser.role !== 'executive' && (
+                                <button onClick={() => setCurrentView('data_entry')} className={`w-full flex items-center p-2 rounded ${currentView === 'data_entry' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>
+                                    <FileEdit className="w-5 h-5 mr-3" /> บันทึกข้อมูลรายงาน
+                                </button>
+                            )}
+                            <button onClick={() => setCurrentView('report')} className={`w-full flex items-center p-2 rounded ${currentView === 'report' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>
+                                <Printer className="w-5 h-5 mr-3" /> ออกเอกสารรายงาน
+                            </button>
+                            {(currentUser.role === 'admin' || currentUser.role === 'executive') && (
+                                <button onClick={() => setCurrentView('tracking')} className={`w-full flex items-center p-2 rounded ${currentView === 'tracking' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}>
+                                    <ClipboardList className="w-5 h-5 mr-3" /> ติดตามสถานะ
+                                </button>
+                            )}
+                            {currentUser.role === 'admin' && (
+                                <>
+                                    <p className="text-xs uppercase tracking-wider text-slate-500 mt-8 mb-2">การจัดการ (Admin)</p>
+                                    <button onClick={() => setCurrentView('unit_settings')} className={`w-full flex items-center p-2 rounded ${currentView === 'unit_settings' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Network className="w-5 h-5 mr-3" /> จัดการรายชื่อหน่วยงาน</button>
+                                    <button onClick={() => setCurrentView('standard_settings')} className={`w-full flex items-center p-2 rounded ${currentView === 'standard_settings' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><Settings className="w-5 h-5 mr-3" /> ตั้งค่า "ค่ากลาง" (Standard)</button>
+                                    <button onClick={() => setCurrentView('audit_logs')} className={`w-full flex items-center p-2 rounded ${currentView === 'audit_logs' ? 'bg-blue-600 text-white' : 'hover:bg-slate-800'}`}><HistoryIcon className="w-5 h-5 mr-3" /> ประวัติการใช้งานระบบ</button>
+                                </>
+                            )}
+                        </nav>
+                    </aside>
+                    <main className="flex-1 flex flex-col h-screen overflow-hidden print-container">
+                        <header className="bg-white shadow-sm p-4 flex justify-between items-center no-print z-10 relative">
+                            <div className="flex items-center">
+                                <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="mr-4 p-1 hover:bg-slate-100 rounded text-slate-600"><MenuIcon className="w-6 h-6" /></button>
+                                <h2 className="text-xl font-semibold text-slate-800">
+                                    {currentView === 'dashboard' && 'Dashboard การใช้พลังงาน'}
+                                    {currentView === 'tracking' && 'ติดตามสถานะการรายงานข้อมูล'}
+                                    {currentView === 'report' && 'ส่งออกรายงานข้อมูล (Print / CSV)'}
+                                    {currentView === 'data_entry' && 'แบบฟอร์มบันทึกข้อมูลการใช้พลังงาน'}
+                                    {currentView === 'standard_settings' && 'การตั้งค่าค่ากลางการใช้พลังงาน'}
+                                    {currentView === 'unit_settings' && 'จัดการรายชื่อและรหัสผ่านหน่วยงาน'}
+                                    {currentView === 'audit_logs' && 'ประวัติการใช้งานระบบ (Audit Logs)'}
+                                </h2>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                                {isDbConnected ? <div className="hidden md:flex items-center text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-full text-xs font-bold mr-2 border border-emerald-200"><Cloud className="w-3.5 h-3.5 mr-1.5" /> ใช้งานผ่าน Google Sheets แล้ว</div> : <div className="hidden md:flex items-center text-rose-500 bg-rose-50 px-3 py-1.5 rounded-full text-xs font-medium mr-2 border border-rose-200"><AlertCircle className="w-3 h-3 mr-1" /> ขาดการเชื่อมต่อ</div>}
+                                {currentView === 'dashboard' && (currentUser.role === 'admin' || currentUser.role === 'executive') && (
+                                    <select value={selectedUnit} onChange={(e) => setSelectedUnit(e.target.value)} className="border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium max-w-[250px] truncate">
+                                        <option value="overall">รวมทุกหน่วย บก.ทท.</option>
+                                        {hierarchy.parents.map(parent => (
+                                            <React.Fragment key={parent}>
+                                                <option value={hierarchy.dict[parent].length > 1 ? `GROUP_${parent}` : parent} className="font-bold text-blue-700">{hierarchy.dict[parent].length > 1 ? `▼ กลุ่ม ${parent}` : `▪ ${parent}`}</option>
+                                                {hierarchy.dict[parent].length > 1 && hierarchy.dict[parent].map(u => <option key={`child-${u}`} value={u}>&nbsp;&nbsp;&nbsp;- {u}</option>)}
+                                            </React.Fragment>
+                                        ))}
+                                    </select>
+                                )}
+                                {currentView !== 'unit_settings' && currentView !== 'audit_logs' && (
+                                    <select value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium bg-slate-50">
+                                        {YEARS.map(y => <option key={y} value={y}>ปีงบฯ {y}</option>)}
+                                    </select>
+                                )}
+                                {currentView !== 'data_entry' && currentView !== 'standard_settings' && currentView !== 'unit_settings' && currentView !== 'audit_logs' && (
+                                    <select value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium">
+                                        {(currentView === 'dashboard' || currentView === 'report') && <option value="สรุปรายปี" className="font-bold text-blue-600">สรุปรายปี (ทุกเดือน)</option>}
+                                        {MONTHS.map(m => <option key={m} value={m}>เดือน {m}</option>)}
+                                    </select>
+                                )}
+                                {currentView !== 'tracking' && currentView !== 'data_entry' && currentView !== 'standard_settings' && currentView !== 'unit_settings' && currentView !== 'audit_logs' && (
+                                    <button onClick={handlePrint} className="flex items-center bg-slate-800 text-white px-4 py-1.5 rounded-md hover:bg-slate-900 transition-colors"><Printer className="w-4 h-4 mr-2" /> พิมพ์</button>
+                                )}
+                            </div>
+                        </header>
+                        <div className="flex-1 overflow-auto bg-slate-50 p-6 relative custom-scrollbar">
+                            {renderContent()}
+                        </div>
+                    </main>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<EnergyReportApp />);
+    </script>
+</body>
+</html>
