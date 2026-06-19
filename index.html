@@ -9,15 +9,15 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     
     <!-- Babel -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.9/babel.min.js"></script>
     
     <!-- Recharts -->
-    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
-    <script src="https://unpkg.com/recharts@2.1.9/umd/Recharts.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/recharts@2.1.9/umd/Recharts.js"></script>
 
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
@@ -76,6 +76,40 @@
 </head>
 <body>
     <div id="root"></div>
+    <script>
+    (function () {
+      function show(msg) {
+        var el = document.getElementById('app-error-overlay');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'app-error-overlay';
+          el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#7f1d1d;color:#fff;font-family:monospace;font-size:13px;line-height:1.5;padding:14px 18px;white-space:pre-wrap;max-height:55vh;overflow:auto;box-shadow:0 -2px 12px rgba(0,0,0,.35)';
+          (document.body || document.documentElement).appendChild(el);
+        }
+        el.textContent = '⚠️ พบข้อผิดพลาด (ถ่ายภาพหน้านี้ส่งให้ผู้ช่วยได้):\n\n' + msg;
+      }
+      window.addEventListener('error', function (e) {
+        show((e.message || 'Unknown error') + (e.filename ? '\n@ ' + e.filename + ':' + (e.lineno||'?') : ''));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason; show('Promise error: ' + (r && r.message ? r.message : r));
+      });
+      window.addEventListener('load', function () {
+        setTimeout(function () {
+          var miss = [];
+          if (!window.React) miss.push('React');
+          if (!window.ReactDOM) miss.push('ReactDOM');
+          if (!window.Babel) miss.push('Babel');
+          if (!window.Recharts) miss.push('Recharts');
+          if (miss.length) { show('โหลดไลบรารีไม่สำเร็จ: ' + miss.join(', ') + '  (ตรวจ CDN / อินเทอร์เน็ต)'); return; }
+          var root = document.getElementById('root');
+          if (root && root.childNodes.length === 0) {
+            show('หน้าเปล่า: แอปไม่ render — ดู error ด้านบน หรือใน Console (F12)');
+          }
+        }, 4500);
+      });
+    })();
+    </script>
 
     <script type="text/babel" data-type="module">
         const { useState, useMemo, useEffect } = React;
