@@ -2556,17 +2556,41 @@
                 setCurrentUser(null);
             };
 
-const API_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+            // 🌟 นำ URL ที่ได้จากการ Deploy Google Apps Script มาวางในเครื่องหมายคำพูดด้านล่างนี้
+            const GOOGLE_SHEETS_URL = "วาง URL ของ Web App ตรงนี้"; 
 
-// โหลดข้อมูลตอนเปิดเว็บ
-const res = await fetch(API_URL);
-const json = await res.json();
+            const handleSaveData = async (payload) => {
+                const newRecord = { ...payload, status: 'submitted', timestamp: new Date().toISOString() };
+                
+                // 1. ยิงข้อมูลไปเก็บบน Google Sheets (ปรับปรุงวิธีหลบ CORS ด้วยการใช้ fetch แบบมี no-cors ควบคู่กับการส่งเป็น Text)
+                if (GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '' && GOOGLE_SHEETS_URL !== "วาง URL ของ Web App ตรงนี้") {
+                    try {
+                        // การส่งข้อมูลแบบ JSON ไปยัง Google Apps Script (Web App) มักจะเจอปัญหา CORS preflight
+                        // วิธีแก้คือต้องส่งด้วย mode: 'no-cors' ซึ่งจะส่งข้อมูลไปได้ แต่จะไม่ได้รับ response กลับมา
+                        fetch(GOOGLE_SHEETS_URL, {
+                            method: 'POST',
+                            mode: 'no-cors',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(newRecord)
+                        }).then(() => {
+                           console.log("ส่งคำสั่งไปยัง Google Sheets แล้ว (ไม่สามารถยืนยันสถานะตอบกลับได้เนื่องจาก no-cors)");
+                        }).catch(error => {
+                           console.error("Fetch API Error:", error);
+                        });
 
-// บันทึกข้อมูล
-await fetch(API_URL, {
-  method: 'POST',
-  body: JSON.stringify({ action: 'saveReport', data: payload })
-});
+                    } catch (error) {
+                        console.error("Google Sheets Submission Error:", error);
+                    }
+                }
+
+                // 2. บันทึกลง Local Storage (เพื่อให้ Dashboard ในเว็บแสดงผลและวาดกราฟได้ทันที)
+                const filteredData = data.filter(d => !(d.unit === payload.unit && d.month === payload.month && d.year === payload.year));
+                const newData = [...filteredData, newRecord];
+                setData(newData);
+                localStorage.setItem('energy_data', JSON.stringify(newData));
+            };
 
             const handleUpdateHierarchy = (newDict) => {
                 const newHierarchy = {
