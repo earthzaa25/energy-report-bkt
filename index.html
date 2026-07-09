@@ -2556,13 +2556,17 @@
                 setCurrentUser(null);
             };
 
-            const handleSaveData = async (payload) => {
-                // Remove existing if any, to "update"
-                const filteredData = data.filter(d => !(d.unit === payload.unit && d.month === payload.month && d.year === payload.year));
-                const newData = [...filteredData, { ...payload, status: 'submitted', timestamp: new Date().toISOString() }];
-                setData(newData);
-                localStorage.setItem('energy_data', JSON.stringify(newData));
-            };
+const API_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
+
+// โหลดข้อมูลตอนเปิดเว็บ
+const res = await fetch(API_URL);
+const json = await res.json();
+
+// บันทึกข้อมูล
+await fetch(API_URL, {
+  method: 'POST',
+  body: JSON.stringify({ action: 'saveReport', data: payload })
+});
 
             const handleUpdateHierarchy = (newDict) => {
                 const newHierarchy = {
