@@ -2463,7 +2463,7 @@
                     }
 
                     // 2. ทำการซิงก์ข้อมูลจาก Google Sheets มาแสดง (ทำหน้าที่เป็น Database 100%)
-                    if (GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
                         try {
                             const response = await fetch(GOOGLE_SHEETS_URL);
                             const sheetData = await response.json();
@@ -2545,7 +2545,7 @@
                 const newRecord = { ...payload, status: 'submitted', timestamp: new Date().toISOString() };
                 
                 // 1. ยิงข้อมูลไปเก็บบน Google Sheets (ปรับปรุงวิธีหลบ CORS ด้วยการใช้ fetch แบบมี no-cors ควบคู่กับการส่งเป็น Text)
-                if (GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '' && GOOGLE_SHEETS_URL !== "วาง URL ของ Web App ตรงนี้") {
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '' && GOOGLE_SHEETS_URL !== "วาง URL ของ Web App ตรงนี้") {
                     try {
                         // การส่งข้อมูลแบบ JSON ไปยัง Google Apps Script (Web App) มักจะเจอปัญหา CORS preflight
                         // วิธีแก้คือต้องส่งด้วย mode: 'no-cors' ซึ่งจะส่งข้อมูลไปได้ แต่จะไม่ได้รับ response กลับมา
