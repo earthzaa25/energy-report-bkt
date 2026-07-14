@@ -2539,6 +2539,40 @@
                 
                 const storedLogs = localStorage.getItem('energy_logs');
                 if (storedLogs) setLogs(JSON.parse(storedLogs));
+                // ดึงประวัติการใช้งานล่าสุดจากชีต (รวมศูนย์ทุกเครื่อง)
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    const lgCb = 'lgCb_' + Date.now();
+                    const lgScript = document.createElement('script');
+                    window[lgCb] = (arr) => {
+                        delete window[lgCb];
+                        if (lgScript.parentNode) document.body.removeChild(lgScript);
+                        if (Array.isArray(arr) && arr.length > 0) {
+                            setLogs(arr);
+                            localStorage.setItem('energy_logs', JSON.stringify(arr));
+                        }
+                    };
+                    lgScript.onerror = () => { if (window[lgCb]) delete window[lgCb]; if (lgScript.parentNode) document.body.removeChild(lgScript); };
+                    lgScript.src = GOOGLE_SHEETS_URL + '?action=getLogs&limit=1000&callback=' + lgCb;
+                    document.body.appendChild(lgScript);
+                }
+                // ดึงรหัสผ่าน/สิทธิ์ล่าสุดจากชีต (ให้ login ได้ทุกเครื่อง)
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    const acCb = 'acCb_' + Date.now();
+                    const acScript = document.createElement('script');
+                    window[acCb] = (obj) => {
+                        delete window[acCb];
+                        if (acScript.parentNode) document.body.removeChild(acScript);
+                        if (obj && typeof obj === 'object') {
+                            if (obj.admins && typeof obj.admins === 'object') { setAdminPasswords(obj.admins); localStorage.setItem('energy_admins', JSON.stringify(obj.admins)); }
+                            if (obj.execs && typeof obj.execs === 'object') { setExecPasswords(obj.execs); localStorage.setItem('energy_execs', JSON.stringify(obj.execs)); }
+                            if (obj.units && typeof obj.units === 'object') { setPasswords(obj.units); localStorage.setItem('energy_units', JSON.stringify(obj.units)); }
+                            if (typeof obj.announcement === 'string') { setAnnouncement(obj.announcement); localStorage.setItem('energy_announcement', obj.announcement); }
+                        }
+                    };
+                    acScript.onerror = () => { if (window[acCb]) delete window[acCb]; if (acScript.parentNode) document.body.removeChild(acScript); };
+                    acScript.src = GOOGLE_SHEETS_URL + '?action=getAccess&callback=' + acCb;
+                    document.body.appendChild(acScript);
+                }
                 
                 const storedHierarchy = localStorage.getItem('energy_hierarchy');
                 if (storedHierarchy) {
@@ -2593,6 +2627,14 @@
                 const updatedLogs = [newLog, ...logs];
                 setLogs(updatedLogs);
                 localStorage.setItem('energy_logs', JSON.stringify(updatedLogs));
+                // บันทึกประวัติการใช้งานลงแท็บ AuditLogs ในชีตด้วย (รวมศูนย์ทุกเครื่อง)
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    fetch(GOOGLE_SHEETS_URL, {
+                        method: 'POST', mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: 'log_add', log: newLog })
+                    }).catch(err => console.error('บันทึก log ลงชีตล้มเหลว:', err));
+                }
             };
 
             const handleLogin = async (role, username, password) => {
@@ -2684,6 +2726,10 @@
                     if (needPwdUpdate) {
                         setPasswords(updatedPasswords);
                         localStorage.setItem('energy_units', JSON.stringify(updatedPasswords));
+                        if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                            fetch(GOOGLE_SHEETS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ type: 'access_update', units: updatedPasswords }) }).catch(()=>{});
+                        }
                     }
                 });
             };
@@ -2712,11 +2758,19 @@
                 showModal({ title: 'สำเร็จ', message: 'บันทึกค่าอ้างอิงเรียบร้อยแล้ว (ซิงก์ขึ้นชีตแล้ว)', type: 'alert' });
             };
 
+            const syncAccessToSheet = (bundle) => {
+                if (typeof GOOGLE_SHEETS_URL === 'undefined' || !GOOGLE_SHEETS_URL || GOOGLE_SHEETS_URL.trim() === '') return;
+                fetch(GOOGLE_SHEETS_URL, {
+                    method: 'POST', mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(Object.assign({ type: 'access_update' }, bundle))
+                }).catch(err => console.error('ซิงก์รหัสผ่าน/สิทธิ์ลงชีตล้มเหลว:', err));
+            };
             const handleUpdateAccess = (type, value, typeName) => {
-                if (type === 'adminPasswords') { setAdminPasswords(value); localStorage.setItem('energy_admins', JSON.stringify(value)); }
-                if (type === 'execPasswords') { setExecPasswords(value); localStorage.setItem('energy_execs', JSON.stringify(value)); }
-                if (type === 'passwords') { setPasswords(value); localStorage.setItem('energy_units', JSON.stringify(value)); }
-                if (type === 'announcement') { setAnnouncement(value); localStorage.setItem('energy_announcement', value); }
+                if (type === 'adminPasswords') { setAdminPasswords(value); localStorage.setItem('energy_admins', JSON.stringify(value)); syncAccessToSheet({ admins: value }); }
+                if (type === 'execPasswords') { setExecPasswords(value); localStorage.setItem('energy_execs', JSON.stringify(value)); syncAccessToSheet({ execs: value }); }
+                if (type === 'passwords') { setPasswords(value); localStorage.setItem('energy_units', JSON.stringify(value)); syncAccessToSheet({ units: value }); }
+                if (type === 'announcement') { setAnnouncement(value); localStorage.setItem('energy_announcement', value); syncAccessToSheet({ announcement: value }); }
                 addLog('ตั้งค่าระบบ', `อัปเดตข้อมูล ${typeName}`);
                 showModal({ title: 'สำเร็จ', message: `บันทึกข้อมูล ${typeName} เรียบร้อยแล้ว`, type: 'alert' });
             };
