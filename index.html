@@ -9,8 +9,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     
     <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+    <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     
     <!-- Babel สำหรับแปลง JSX -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.6/babel.min.js"></script>
@@ -212,6 +212,25 @@
                 'สนภ.2 นทพ.', 'นพค.21 สนภ.2 นทพ.', 'นพค.22 สนภ.2 นทพ.', 
                 'นพค.23 สนภ.2 นทพ.', 'นพค.24 สนภ.2 นทพ.'
             ]
+        };
+
+        // ทำให้ข้อมูลหน่วยงานปลอดภัย: รับเฉพาะ dict ของจริง และทุกค่าต้องเป็นลิสต์ของข้อความ
+        const sanitizeHierarchyDict = (d) => {
+            const clean = {};
+            if (!d || typeof d !== 'object' || Array.isArray(d)) return clean; // ต้องเป็น object เท่านั้น (ห้ามเป็น array)
+            Object.keys(d).forEach(k => {
+                const v = d[k];
+                let arr = [];
+                if (Array.isArray(v)) arr = v.filter(x => typeof x === 'string' && x.trim() !== '');
+                else if (typeof v === 'string' && v.trim() !== '') arr = [v];
+                if (arr.length === 0) arr = [k];
+                clean[k] = arr;
+            });
+            return clean;
+        };
+        const buildHierarchy = (d) => {
+            const dict = sanitizeHierarchyDict(d);
+            return { dict, parents: Object.keys(dict), leaves: Object.values(dict).flat() };
         };
 
         const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -2498,12 +2517,36 @@
                 
                 const storedHierarchy = localStorage.getItem('energy_hierarchy');
                 if (storedHierarchy) {
-                    const hDict = JSON.parse(storedHierarchy);
-                    setHierarchy({
-                        dict: hDict,
-                        parents: Object.keys(hDict),
-                        leaves: Object.values(hDict).flat()
-                    });
+                    try {
+                        const safeStored = buildHierarchy(JSON.parse(storedHierarchy));
+                        if (safeStored.parents.length > 0) {
+                            setHierarchy(safeStored);
+                        } else {
+                            localStorage.removeItem('energy_hierarchy'); // ข้อมูลเสีย ล้างทิ้ง กลับไปใช้ค่าเริ่มต้น
+                        }
+                    } catch (e) {
+                        localStorage.removeItem('energy_hierarchy');
+                    }
+                }
+                // ดึงรายชื่อหน่วยงานล่าสุดจาก Google Sheet มาทับ (ให้จำได้ทุกเครื่อง)
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    const hierCbName = 'hierCb_' + Date.now();
+                    const hierScript = document.createElement('script');
+                    window[hierCbName] = (dict) => {
+                        delete window[hierCbName];
+                        if (hierScript.parentNode) document.body.removeChild(hierScript);
+                        // รับเฉพาะ dict หน่วยงานของจริง (ไม่ใช่ array ข้อมูลพลังงาน)
+                        if (dict && typeof dict === 'object' && !Array.isArray(dict) && Object.keys(dict).length > 0) {
+                            const safeH = buildHierarchy(dict);
+                            if (safeH.parents.length > 0) {
+                                setHierarchy(safeH);
+                                localStorage.setItem('energy_hierarchy', JSON.stringify(safeH.dict));
+                            }
+                        }
+                    };
+                    hierScript.onerror = () => { if (window[hierCbName]) delete window[hierCbName]; if (hierScript.parentNode) document.body.removeChild(hierScript); };
+                    hierScript.src = GOOGLE_SHEETS_URL + '?action=getHierarchy&callback=' + hierCbName;
+                    document.body.appendChild(hierScript);
                 }
                 
                 const storedAnnounce = localStorage.getItem('energy_announcement');
@@ -2594,6 +2637,14 @@
                 };
                 setHierarchy(newHierarchy);
                 localStorage.setItem('energy_hierarchy', JSON.stringify(newDict));
+                // บันทึกรายชื่อหน่วยงานลง Google Sheet ด้วย (ให้จำถาวรทุกเครื่อง)
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    fetch(GOOGLE_SHEETS_URL, {
+                        method: 'POST', mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: 'hierarchy_update', hierarchy: newDict })
+                    }).catch(err => console.error('บันทึกหน่วยงานลงชีตล้มเหลว:', err));
+                }
                 
                 // Update passwords for new units (default '1234')
                 const updatedPasswords = { ...passwords };
