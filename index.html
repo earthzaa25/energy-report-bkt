@@ -2501,8 +2501,33 @@
                             });
                             const sheetData = await fetchDataJSONP();
                             if (Array.isArray(sheetData)) {
-                                setData(sheetData); 
-                                localStorage.setItem('energy_data', JSON.stringify(sheetData)); 
+                                let merged = sheetData;
+                                // ดึงค่า Baseline จากแท็บ Settings มาทับค่าอ้างอิง (ให้ตรงกันทุกเครื่อง)
+                                try {
+                                    const baselines = await new Promise((resolve, reject) => {
+                                        const bcb = 'blCb_' + Date.now();
+                                        const bsc = document.createElement('script');
+                                        const bto = setTimeout(() => { if (window[bcb]) { delete window[bcb]; if (bsc.parentNode) document.body.removeChild(bsc); reject(new Error('timeout')); } }, 15000);
+                                        window[bcb] = (d) => { clearTimeout(bto); delete window[bcb]; if (bsc.parentNode) document.body.removeChild(bsc); resolve(d); };
+                                        bsc.onerror = () => { clearTimeout(bto); if (window[bcb]) delete window[bcb]; if (bsc.parentNode) document.body.removeChild(bsc); reject(new Error('load error')); };
+                                        bsc.src = GOOGLE_SHEETS_URL + '?action=getAllBaselines&callback=' + bcb;
+                                        document.body.appendChild(bsc);
+                                    });
+                                    if (baselines && typeof baselines === 'object') {
+                                        merged = sheetData.map(d => {
+                                            const yb = baselines[d.year];
+                                            if (yb && yb[d.unit]) {
+                                                return { ...d,
+                                                    electricity: { ...d.electricity, standard: Number(yb[d.unit].elec) || d.electricity.standard },
+                                                    water: { ...d.water, standard: Number(yb[d.unit].water) || d.water.standard }
+                                                };
+                                            }
+                                            return d;
+                                        });
+                                    }
+                                } catch (e) { /* ไม่มี baseline ก็ใช้ค่าเดิม */ }
+                                setData(merged);
+                                localStorage.setItem('energy_data', JSON.stringify(merged));
                             }
                         } catch (error) {
                             console.log("กำลังรอการเชื่อมต่อฐานข้อมูล Google Sheets...", error);
@@ -2676,7 +2701,15 @@
                 });
                 setData(newData);
                 localStorage.setItem('energy_data', JSON.stringify(newData));
-                showModal({ title: 'สำเร็จ', message: 'บันทึกค่าอ้างอิงเรียบร้อยแล้ว', type: 'alert' });
+                // บันทึกค่า Baseline ลงแท็บ Settings ในชีตด้วย (ให้จำถาวรทุกเครื่อง)
+                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
+                    fetch(GOOGLE_SHEETS_URL, {
+                        method: 'POST', mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type: 'baseline_update', year: year, standards: newStandards })
+                    }).catch(err => console.error('บันทึกค่าอ้างอิงลงชีตล้มเหลว:', err));
+                }
+                showModal({ title: 'สำเร็จ', message: 'บันทึกค่าอ้างอิงเรียบร้อยแล้ว (ซิงก์ขึ้นชีตแล้ว)', type: 'alert' });
             };
 
             const handleUpdateAccess = (type, value, typeName) => {
