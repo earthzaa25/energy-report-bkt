@@ -2511,7 +2511,7 @@
             };
             const closeModal = () => setModalState({ isOpen: false });
 
-            const jsonpRequest = (params = {}, timeoutMs = 12000) => new Promise((resolve, reject) => {
+            const jsonpRequest = (params = {}, timeoutMs = 60000) => new Promise((resolve, reject) => {
                 const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
                 const script = document.createElement('script');
                 const query = new URLSearchParams({ ...params, callback: cbName, _: Date.now().toString() });
@@ -2560,8 +2560,8 @@
                 if (showState) setSettingsSync({ status: 'loading', message: 'กำลังอ่าน Access, หน่วยงาน, Baseline และ Audit Logs', at: settingsSync.at });
                 try {
                     const [accessRaw, hierarchyRaw, baselinesRaw, logsRaw] = await Promise.all([
-                        jsonpRequest({ action: 'getAccess' }), jsonpRequest({ action: 'getHierarchy' }),
-                        jsonpRequest({ action: 'getAllBaselines' }), jsonpRequest({ action: 'getLogs', limit: '1000' })
+                        jsonpRequest({ action: 'getAccess' }, 90000), jsonpRequest({ action: 'getHierarchy' }, 90000),
+                        jsonpRequest({ action: 'getAllBaselines' }, 60000), jsonpRequest({ action: 'getLogs', limit: '1000' }, 90000)
                     ]);
                     const cloud = { access: unwrapApi(accessRaw) || {}, hierarchy: unwrapApi(hierarchyRaw) || {}, baselines: unwrapApi(baselinesRaw) || {}, logs: unwrapApi(logsRaw) || [] };
                     applyCloudSettings(cloud);
@@ -2768,7 +2768,7 @@
             };
 
             // 🌟 นำ URL ที่ได้จากการ Deploy Google Apps Script มาวางในเครื่องหมายคำพูดด้านล่างนี้
-            const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyK0TX1GGB8ronBcpaAIU1vJYNhlSWqiiRYAF7rNZdFpu68-5gnCFT0VFZ56vNlIjKq/exec"; 
+            const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycby8zH27w4UJ321WyGmE-OS9uQcyH17g8WNkNgUhx-PudXY5rKjyCtlztNRU28-2Kge2/exec"; 
 
             const handleSaveData = async (payload) => {
                 const newRecord = { ...payload, status: 'submitted', timestamp: new Date().toISOString() };
