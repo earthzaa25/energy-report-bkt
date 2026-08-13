@@ -745,31 +745,47 @@
             );
         }
 
-        function UnitSettings({ hierarchy, onUpdateHierarchy, onAddLog, showModal }) {
+        function SettingsSyncPanel({ status, message, lastSyncAt, comparison, onReload }) {
+            const tone = status === 'error' ? 'border-rose-200 bg-rose-50 text-rose-700' : status === 'saving' || status === 'loading' ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+            const label = status === 'saving' ? 'กำลังบันทึกและตรวจสอบกับ Google Sheets...' : status === 'loading' ? 'กำลังโหลดค่าจาก Google Sheets...' : status === 'error' ? 'ซิงก์ไม่สำเร็จ' : 'เชื่อมต่อ Google Sheets แล้ว';
+            return (
+                <div className={`max-w-5xl mx-auto mb-5 rounded-xl border p-4 ${tone}`}>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                            {status === 'saving' || status === 'loading' ? <SmallLoader className="w-5 h-5 mt-0.5"/> : status === 'error' ? <AlertTriangle className="w-5 h-5 mt-0.5"/> : <CheckCircle2 className="w-5 h-5 mt-0.5"/>}
+                            <div><p className="text-sm font-bold">{label}</p><p className="text-xs mt-1">{message || (comparison === 'match' ? 'ค่าบนเครื่องตรงกับค่าบนชีต' : comparison === 'different' ? 'ค่าบนเครื่องต่างจากชีต กรุณากดโหลดจากชีต' : 'พร้อมใช้งาน')}</p>{lastSyncAt && <p className="text-[11px] opacity-70 mt-1">ตรวจล่าสุด {lastSyncAt.toLocaleString('th-TH')}</p>}</div>
+                        </div>
+                        <button disabled={status === 'saving' || status === 'loading'} onClick={onReload} className="bg-white/90 border border-current disabled:opacity-50 px-4 py-2 rounded-lg text-xs font-bold whitespace-nowrap">โหลดใหม่จากชีต</button>
+                    </div>
+                </div>
+            );
+        }
+
+        function UnitSettings({ hierarchy, onUpdateHierarchy, onAddLog, showModal, syncBusy }) {
             const [newParentName, setNewParentName] = useState('');
             const [newChildNames, setNewChildNames] = useState({});
 
-            const handleAddParent = () => {
+            const handleAddParent = async () => {
                 if (newParentName.trim() === '') return;
                 if (hierarchy.parents.includes(newParentName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อกลุ่มหน่วยงานนี้มีอยู่แล้วในระบบ', type: 'error'});
                 const updatedDict = { ...hierarchy.dict, [newParentName]: [newParentName] };
-                onUpdateHierarchy(updatedDict); onAddLog('เพิ่มกลุ่มหน่วยงาน', `เพิ่มกลุ่มหน่วยแม่: ${newParentName}`); setNewParentName('');
+                try { await onUpdateHierarchy(updatedDict); onAddLog('เพิ่มกลุ่มหน่วยงาน', `เพิ่มกลุ่มหน่วยแม่: ${newParentName}`); setNewParentName(''); } catch (_) {}
             };
 
-            const handleAddChild = (parent) => {
+            const handleAddChild = async (parent) => {
                 const childName = newChildNames[parent];
                 if (!childName || childName.trim() === '') return;
                 if (hierarchy.leaves.includes(childName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อหน่วยงานย่อยนี้มีอยู่แล้วในระบบ ไม่สามารถซ้ำได้', type: 'error'});
                 const updatedChildren = [...hierarchy.dict[parent], childName];
-                onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren }); onAddLog('เพิ่มหน่วยงานย่อย', `เพิ่ม ${childName} ภายใต้กลุ่ม ${parent}`); setNewChildNames(prev => ({ ...prev, [parent]: '' }));
+                try { await onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren }); onAddLog('เพิ่มหน่วยงานย่อย', `เพิ่ม ${childName} ภายใต้กลุ่ม ${parent}`); setNewChildNames(prev => ({ ...prev, [parent]: '' })); } catch (_) {}
             };
 
             const handleDeleteChild = (parent, child) => {
                 showModal({
                     title: 'ยืนยันการลบ', message: `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยงาน "${child}" ออกจากระบบ?`, type: 'confirm',
-                    onConfirm: () => {
+                    onConfirm: async () => {
                         const updatedChildren = hierarchy.dict[parent].filter(c => c !== child);
-                        onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren }); onAddLog('ลบหน่วยงานย่อย', `ลบ ${child} ออกจากกลุ่ม ${parent}`);
+                        try { await onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren }); onAddLog('ลบหน่วยงานย่อย', `ลบ ${child} ออกจากกลุ่ม ${parent}`); } catch (_) {}
                     }
                 });
             };
@@ -777,9 +793,9 @@
             const handleDeleteParent = (parent) => {
                 showModal({
                     title: 'คำเตือน: ยืนยันการลบกลุ่ม', message: `คุณต้องการลบกลุ่ม "${parent}" พร้อมทั้งหน่วยงานย่อยทั้งหมดในกลุ่มนี้ใช่หรือไม่?`, type: 'confirm',
-                    onConfirm: () => {
+                    onConfirm: async () => {
                         const newDict = { ...hierarchy.dict }; delete newDict[parent];
-                        onUpdateHierarchy(newDict); onAddLog('ลบกลุ่มหน่วยงาน', `ลบกลุ่ม ${parent} ทั้งหมด`);
+                        try { await onUpdateHierarchy(newDict); onAddLog('ลบกลุ่มหน่วยงาน', `ลบกลุ่ม ${parent} ทั้งหมด`); } catch (_) {}
                     }
                 });
             };
@@ -797,7 +813,7 @@
                         
                         <div className="flex space-x-3 mb-8 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100">
                             <input type="text" placeholder="พิมพ์ชื่อกลุ่มหน่วยงานหลัก (เช่น สส.ทหาร)" className="border border-slate-300 rounded-lg p-2.5 text-sm flex-1 focus:ring-2 focus:ring-emerald-500 outline-none" value={newParentName} onChange={e => setNewParentName(e.target.value)} />
-                            <button onClick={handleAddParent} className="bg-[#1e293b] text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-black transition-colors shadow-sm whitespace-nowrap">+ เพิ่มกลุ่มหน่วยแม่</button>
+                            <button disabled={syncBusy} onClick={handleAddParent} className="bg-[#1e293b] disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-black transition-colors shadow-sm whitespace-nowrap">+ เพิ่มกลุ่มหน่วยแม่</button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {hierarchy.parents.map(parent => (
@@ -830,23 +846,23 @@
             );
         }
 
-        function StandardSettings({ data, year, onUpdateStandards, hierarchy, onAddLog, showModal }) {
+        function StandardSettings({ data, baselines, year, onUpdateStandards, hierarchy, onAddLog, showModal, syncBusy }) {
             const [localStds, setLocalStds] = useState({});
 
             useEffect(() => {
                 const stds = {};
                 hierarchy.leaves.forEach(u => {
+                    const cloudBaseline = baselines?.[year]?.[u];
                     const existing = data.find(d => d.year === year && d.unit === u && d.status === 'submitted');
-                    stds[u] = { elec: existing?.electricity?.standard || 50000, water: existing?.water?.standard || 10000 };
+                    stds[u] = { elec: cloudBaseline?.elec ?? existing?.electricity?.standard ?? 50000, water: cloudBaseline?.water ?? existing?.water?.standard ?? 10000 };
                 });
                 setLocalStds(stds);
-            }, [year, data, hierarchy.leaves]);
+            }, [year, data, hierarchy.leaves, baselines]);
 
             const handleChange = (unit, field, value) => setLocalStds(prev => ({ ...prev, [unit]: { ...prev[unit], [field]: value } }));
 
             const handleSave = async () => {
-                await onUpdateStandards(year, localStds);
-                onAddLog('ตั้งค่าส่วนกลาง', `อัปเดตค่ากลาง (Baseline) ประจำปีงบฯ ${year}`);
+                try { await onUpdateStandards(year, localStds); onAddLog('ตั้งค่าส่วนกลาง', `อัปเดตค่ากลาง (Baseline) ประจำปีงบฯ ${year}`); } catch (_) {}
             };
 
             return (
@@ -856,7 +872,7 @@
                             <h3 className="font-bold text-lg flex items-center"><Settings className="w-5 h-5 mr-2 text-cyan-400"/> กำหนดค่าอ้างอิงพลังงาน (Baseline EnB)</h3>
                             <p className="text-[11px] text-slate-400 mt-1 font-medium ml-7">สำหรับใช้ประเมินเป้าหมายการลดใช้พลังงาน 20% ประจำปีงบฯ {year}</p>
                         </div>
-                        <button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl flex items-center text-sm font-bold transition-colors shadow-sm"><Save className="w-4 h-4 mr-2"/> บันทึกการตั้งค่า</button>
+                        <button disabled={syncBusy} onClick={handleSave} className="bg-emerald-600 disabled:opacity-50 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl flex items-center text-sm font-bold transition-colors shadow-sm">{syncBusy ? <SmallLoader className="w-4 h-4 mr-2"/> : <Save className="w-4 h-4 mr-2"/>} {syncBusy ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}</button>
                     </div>
                     <div className="p-0">
                         <div className="overflow-x-auto custom-scrollbar">
@@ -1371,7 +1387,7 @@
             );
         }
 
-        function AccessSettings({ adminPasswords, execPasswords, unitPasswords, hierarchy, globalAnnouncement, onUpdateAccess, showModal, currentUser }) {
+        function AccessSettings({ adminPasswords, execPasswords, unitPasswords, hierarchy, globalAnnouncement, onUpdateAccess, showModal, currentUser, syncBusy }) {
             const [localAdmins, setLocalAdmins] = useState(adminPasswords || {});
             const [localExecs, setLocalExecs] = useState(execPasswords || {});
             const [localUnits, setLocalUnits] = useState(unitPasswords || {});
@@ -1386,10 +1402,10 @@
             const [newAdmin, setNewAdmin] = useState({username: '', password: ''});
             const [newExec, setNewExec] = useState({username: '', password: ''});
 
-            const handleSaveAdmins = () => onUpdateAccess('adminPasswords', localAdmins, 'ผู้ดูแลระบบ');
-            const handleSaveExecs = () => onUpdateAccess('execPasswords', localExecs, 'ผู้บริหาร');
-            const handleSaveUnits = () => onUpdateAccess('passwords', localUnits, 'หน่วยงาน');
-            const handleSaveAnnouncement = () => onUpdateAccess('announcement', localAnnouncement, 'ประกาศส่วนกลาง');
+            const handleSaveAdmins = () => onUpdateAccess('adminPasswords', localAdmins, 'ผู้ดูแลระบบ').catch(() => {});
+            const handleSaveExecs = () => onUpdateAccess('execPasswords', localExecs, 'ผู้บริหาร').catch(() => {});
+            const handleSaveUnits = () => onUpdateAccess('passwords', localUnits, 'หน่วยงาน').catch(() => {});
+            const handleSaveAnnouncement = () => onUpdateAccess('announcement', localAnnouncement, 'ประกาศส่วนกลาง').catch(() => {});
 
             const renderUserList = (usersDict, setUsersDict, newObj, setNewObj) => {
                 return (
@@ -1439,7 +1455,7 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="bg-[#1e293b] px-6 py-4 flex flex-col sm:flex-row justify-between items-center text-white gap-3 sm:gap-0">
                             <h3 className="font-bold text-base flex items-center"><Megaphone className="w-5 h-5 mr-2 text-purple-400"/> ตั้งค่าประกาศส่วนกลาง (Announcement)</h3>
-                            <button onClick={handleSaveAnnouncement} className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกข้อความ</button>
+                            <button disabled={syncBusy} onClick={handleSaveAnnouncement} className="bg-purple-600 disabled:opacity-50 hover:bg-purple-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกข้อความ</button>
                         </div>
                         <div className="p-6 bg-slate-50/50">
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">ข้อความประกาศให้ทุกหน่วยงานเห็น (หน้า Login และ Dashboard)</label>
@@ -1451,7 +1467,7 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="bg-[#1e293b] px-6 py-4 flex flex-col sm:flex-row justify-between items-center text-white gap-3 sm:gap-0">
                             <h3 className="font-bold text-base flex items-center"><ShieldCheck className="w-5 h-5 mr-2 text-emerald-400"/> 1. บัญชีผู้ดูแลระบบ (Admin)</h3>
-                            <button onClick={handleSaveAdmins} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกข้อมูล Admin</button>
+                            <button disabled={syncBusy} onClick={handleSaveAdmins} className="bg-emerald-600 disabled:opacity-50 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกข้อมูล Admin</button>
                         </div>
                         <div className="p-6 bg-slate-50/50">
                             {renderUserList(localAdmins, setLocalAdmins, newAdmin, setNewAdmin)}
@@ -1461,7 +1477,7 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="bg-[#1e293b] px-6 py-4 flex flex-col sm:flex-row justify-between items-center text-white gap-3 sm:gap-0">
                             <h3 className="font-bold text-base flex items-center"><Briefcase className="w-5 h-5 mr-2 text-yellow-400"/> 2. บัญชีผู้บริหาร (Executive)</h3>
-                            <button onClick={handleSaveExecs} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกข้อมูล Executive</button>
+                            <button disabled={syncBusy} onClick={handleSaveExecs} className="bg-emerald-600 disabled:opacity-50 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกข้อมูล Executive</button>
                         </div>
                         <div className="p-6 bg-slate-50/50">
                             {renderUserList(localExecs, setLocalExecs, newExec, setNewExec)}
@@ -1471,7 +1487,7 @@
                     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="bg-[#1e293b] px-6 py-4 flex flex-col sm:flex-row justify-between items-center text-white gap-3 sm:gap-0">
                             <h3 className="font-bold text-base flex items-center"><Building2Icon className="w-5 h-5 mr-2 text-emerald-400"/> 3. รหัสผ่านหน่วยงานปฏิบัติการ (User)</h3>
-                            <button onClick={handleSaveUnits} className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกรหัสผ่านหน่วยงาน</button>
+                            <button disabled={syncBusy} onClick={handleSaveUnits} className="bg-emerald-600 disabled:opacity-50 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg flex items-center text-sm font-bold transition-colors w-full sm:w-auto justify-center"><Save className="w-4 h-4 mr-2"/> บันทึกรหัสผ่านหน่วยงาน</button>
                         </div>
                         <div className="p-6 bg-slate-50/50">
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2456,6 +2472,9 @@
             const [adminPasswords, setAdminPasswords] = useState({});
             const [execPasswords, setExecPasswords] = useState({});
             const [passwords, setPasswords] = useState({});
+            const [baselines, setBaselines] = useState({});
+            const [cloudSettings, setCloudSettings] = useState(null);
+            const [settingsSync, setSettingsSync] = useState({ status: 'loading', message: 'กำลังโหลดการตั้งค่าจากชีต', at: null });
             
             const [isLoading, setIsLoading] = useState(true);
             const [databaseStatus, setDatabaseStatus] = useState('loading');
@@ -2482,6 +2501,78 @@
                 script.src = GOOGLE_SHEETS_URL + '?' + query.toString();
                 document.body.appendChild(script);
             });
+
+            const unwrapApi = (value) => {
+                if (value && typeof value === 'object' && value.success === false) throw new Error(value.error || value.message || 'Apps Script ปฏิเสธคำขอ');
+                return value && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, 'data') ? value.data : value;
+            };
+            const stableJson = (value) => {
+                const sortValue = v => Array.isArray(v) ? v.map(sortValue) : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sortValue(v[k]); return o; }, {}) : v);
+                return JSON.stringify(sortValue(value));
+            };
+            const settingsSnapshot = () => ({ hierarchy: hierarchy.dict, admins: adminPasswords, execs: execPasswords, units: passwords, announcement, baselines });
+
+            const applyCloudSettings = ({ access, hierarchy: cloudHierarchy, baselines: cloudBaselines, logs: cloudLogs }) => {
+                const safeAccess = access && typeof access === 'object' ? access : {};
+                const admins = safeAccess.admins && typeof safeAccess.admins === 'object' ? safeAccess.admins : {};
+                const execs = safeAccess.execs && typeof safeAccess.execs === 'object' ? safeAccess.execs : {};
+                const units = normalizePasswordMap(safeAccess.units && typeof safeAccess.units === 'object' ? safeAccess.units : {});
+                const safeHierarchy = buildHierarchy(cloudHierarchy && typeof cloudHierarchy === 'object' && !Array.isArray(cloudHierarchy) && Object.keys(cloudHierarchy).length ? cloudHierarchy : DEFAULT_HIERARCHY);
+                const mergedHierarchy = mergeHierarchyWithUnits(safeHierarchy, Object.keys(units));
+                setAdminPasswords(admins); setExecPasswords(execs); setPasswords(units);
+                setAnnouncement(typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
+                setHierarchy(mergedHierarchy); setBaselines(cloudBaselines && typeof cloudBaselines === 'object' ? cloudBaselines : {});
+                if (Array.isArray(cloudLogs)) setLogs(cloudLogs);
+                localStorage.setItem('energy_admins', JSON.stringify(admins));
+                localStorage.setItem('energy_execs', JSON.stringify(execs));
+                localStorage.setItem('energy_units', JSON.stringify(units));
+                localStorage.setItem('energy_announcement', typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
+                localStorage.setItem('energy_hierarchy', JSON.stringify(mergedHierarchy.dict));
+                localStorage.setItem('energy_baselines', JSON.stringify(cloudBaselines || {}));
+                if (Array.isArray(cloudLogs)) localStorage.setItem('energy_logs', JSON.stringify(cloudLogs));
+            };
+
+            const loadCloudSettings = async ({ showState = true } = {}) => {
+                if (showState) setSettingsSync({ status: 'loading', message: 'กำลังอ่าน Access, หน่วยงาน, Baseline และ Audit Logs', at: settingsSync.at });
+                try {
+                    const [accessRaw, hierarchyRaw, baselinesRaw, logsRaw] = await Promise.all([
+                        jsonpRequest({ action: 'getAccess' }), jsonpRequest({ action: 'getHierarchy' }),
+                        jsonpRequest({ action: 'getAllBaselines' }), jsonpRequest({ action: 'getLogs', limit: '1000' })
+                    ]);
+                    const cloud = { access: unwrapApi(accessRaw) || {}, hierarchy: unwrapApi(hierarchyRaw) || {}, baselines: unwrapApi(baselinesRaw) || {}, logs: unwrapApi(logsRaw) || [] };
+                    applyCloudSettings(cloud);
+                    setCloudSettings(cloud);
+                    const at = new Date();
+                    setSettingsSync({ status: 'success', message: 'โหลดค่าล่าสุดจาก Google Sheets เรียบร้อย', at });
+                    return cloud;
+                } catch (error) {
+                    setSettingsSync({ status: 'error', message: error.message || 'โหลด Settings ไม่สำเร็จ', at: settingsSync.at });
+                    throw error;
+                }
+            };
+
+            const postAndVerify = async (payload, readBack, matches, label) => {
+                setSettingsSync({ status: 'saving', message: `กำลังบันทึก ${label}`, at: settingsSync.at });
+                let responseReadable = false;
+                try {
+                    const response = await fetch(GOOGLE_SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+                    responseReadable = true;
+                    if (!response.ok) throw new Error(`Backend ตอบกลับ HTTP ${response.status}`);
+                    const text = await response.text();
+                    if (text) unwrapApi(JSON.parse(text));
+                } catch (error) {
+                    if (responseReadable) throw error;
+                    await fetch(GOOGLE_SHEETS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+                }
+                for (let attempt = 0; attempt < 6; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 900 : 1500));
+                    const actual = unwrapApi(await readBack());
+                    if (matches(actual)) {
+                        const at = new Date(); setSettingsSync({ status: 'success', message: `บันทึก ${label} และตรวจพบใน Google Sheets แล้ว`, at }); return actual;
+                    }
+                }
+                throw new Error(`ส่ง ${label} แล้ว แต่โหลดกลับจาก Google Sheets ไม่ตรงกัน`);
+            };
 
             const refreshDatabase = async ({ allowCacheFallback = true, silent = false } = {}) => {
                 if (!GOOGLE_SHEETS_URL || GOOGLE_SHEETS_URL.trim() === '') throw new Error('ยังไม่ได้ตั้งค่า Google Apps Script URL');
@@ -2582,94 +2673,28 @@
             };
 
             useEffect(() => {
-                // Initialize Settings
                 initDefaultPasswords();
-                const loadDatabase = async () => {
+                const loadEverything = async () => {
                     try {
-                        await refreshDatabase({ allowCacheFallback: true, silent: true });
+                        await Promise.all([
+                            refreshDatabase({ allowCacheFallback: true, silent: true }),
+                            loadCloudSettings({ showState: true })
+                        ]);
                     } catch (error) {
                         console.error(error);
+                        // Settings ใช้ cache ได้เพื่อให้เปิดหน้าได้ แต่จะแสดงสถานะผิดพลาดชัดเจน
+                        try {
+                            const cachedHierarchy = JSON.parse(localStorage.getItem('energy_hierarchy') || 'null');
+                            const cachedBaselines = JSON.parse(localStorage.getItem('energy_baselines') || '{}');
+                            const cachedLogs = JSON.parse(localStorage.getItem('energy_logs') || '[]');
+                            if (cachedHierarchy) setHierarchy(buildHierarchy(cachedHierarchy));
+                            setBaselines(cachedBaselines); setLogs(cachedLogs);
+                        } catch (_) {}
+                    } finally {
+                        setIsLoading(false);
                     }
                 };
-
-                loadDatabase();
-                
-                const storedLogs = localStorage.getItem('energy_logs');
-                if (storedLogs) setLogs(JSON.parse(storedLogs));
-                // ดึงประวัติการใช้งานล่าสุดจากชีต (รวมศูนย์ทุกเครื่อง)
-                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                    const lgCb = 'lgCb_' + Date.now();
-                    const lgScript = document.createElement('script');
-                    window[lgCb] = (arr) => {
-                        delete window[lgCb];
-                        if (lgScript.parentNode) document.body.removeChild(lgScript);
-                        if (Array.isArray(arr) && arr.length > 0) {
-                            setLogs(arr);
-                            localStorage.setItem('energy_logs', JSON.stringify(arr));
-                        }
-                    };
-                    lgScript.onerror = () => { if (window[lgCb]) delete window[lgCb]; if (lgScript.parentNode) document.body.removeChild(lgScript); };
-                    lgScript.src = GOOGLE_SHEETS_URL + '?action=getLogs&limit=1000&callback=' + lgCb;
-                    document.body.appendChild(lgScript);
-                }
-                // ดึงรหัสผ่าน/สิทธิ์ล่าสุดจากชีต (ให้ login ได้ทุกเครื่อง)
-                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                    const acCb = 'acCb_' + Date.now();
-                    const acScript = document.createElement('script');
-                    window[acCb] = (obj) => {
-                        delete window[acCb];
-                        if (acScript.parentNode) document.body.removeChild(acScript);
-                        if (obj && typeof obj === 'object') {
-                            if (obj.admins && typeof obj.admins === 'object') { setAdminPasswords(obj.admins); localStorage.setItem('energy_admins', JSON.stringify(obj.admins)); }
-                            if (obj.execs && typeof obj.execs === 'object') { setExecPasswords(obj.execs); localStorage.setItem('energy_execs', JSON.stringify(obj.execs)); }
-                            if (obj.units && typeof obj.units === 'object') { const normalizedUnits = normalizePasswordMap(obj.units); setPasswords(normalizedUnits); localStorage.setItem('energy_units', JSON.stringify(normalizedUnits)); setHierarchy(prev => mergeHierarchyWithUnits(prev, Object.keys(normalizedUnits))); }
-                            if (typeof obj.announcement === 'string') { setAnnouncement(obj.announcement); localStorage.setItem('energy_announcement', obj.announcement); }
-                        }
-                    };
-                    acScript.onerror = () => { if (window[acCb]) delete window[acCb]; if (acScript.parentNode) document.body.removeChild(acScript); };
-                    acScript.src = GOOGLE_SHEETS_URL + '?action=getAccess&callback=' + acCb;
-                    document.body.appendChild(acScript);
-                }
-                
-                const storedHierarchy = localStorage.getItem('energy_hierarchy');
-                if (storedHierarchy) {
-                    try {
-                        const safeStored = buildHierarchy(JSON.parse(storedHierarchy));
-                        if (safeStored.parents.length > 0) {
-                            setHierarchy(safeStored);
-                        } else {
-                            localStorage.removeItem('energy_hierarchy'); // ข้อมูลเสีย ล้างทิ้ง กลับไปใช้ค่าเริ่มต้น
-                        }
-                    } catch (e) {
-                        localStorage.removeItem('energy_hierarchy');
-                    }
-                }
-                // ดึงรายชื่อหน่วยงานล่าสุดจาก Google Sheet มาทับ (ให้จำได้ทุกเครื่อง)
-                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                    const hierCbName = 'hierCb_' + Date.now();
-                    const hierScript = document.createElement('script');
-                    window[hierCbName] = (dict) => {
-                        delete window[hierCbName];
-                        if (hierScript.parentNode) document.body.removeChild(hierScript);
-                        // รับเฉพาะ dict หน่วยงานของจริง (ไม่ใช่ array ข้อมูลพลังงาน)
-                        if (dict && typeof dict === 'object' && !Array.isArray(dict) && Object.keys(dict).length > 0) {
-                            const safeH = mergeHierarchyWithUnits(buildHierarchy(dict), Object.keys(passwords));
-                            if (safeH.parents.length > 0) {
-                                setHierarchy(safeH);
-                                localStorage.setItem('energy_hierarchy', JSON.stringify(safeH.dict));
-                            }
-                        }
-                    };
-                    hierScript.onerror = () => { if (window[hierCbName]) delete window[hierCbName]; if (hierScript.parentNode) document.body.removeChild(hierScript); };
-                    hierScript.src = GOOGLE_SHEETS_URL + '?action=getHierarchy&callback=' + hierCbName;
-                    document.body.appendChild(hierScript);
-                }
-                
-                const storedAnnounce = localStorage.getItem('energy_announcement');
-                if (storedAnnounce) setAnnouncement(storedAnnounce);
-
-                // Simulate network delay
-                setTimeout(() => setIsLoading(false), 800);
+                loadEverything();
             }, []);
 
             const addLog = (action, details) => {
@@ -2688,7 +2713,7 @@
                 if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
                     fetch(GOOGLE_SHEETS_URL, {
                         method: 'POST', mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ type: 'log_add', log: newLog })
                     }).catch(err => console.error('บันทึก log ลงชีตล้มเหลว:', err));
                 }
@@ -2761,79 +2786,71 @@
                 }
             };
 
-            const handleUpdateHierarchy = (newDict) => {
-                const newHierarchy = mergeHierarchyWithUnits(buildHierarchy(newDict), Object.keys(passwords));
-                setHierarchy(newHierarchy);
-                localStorage.setItem('energy_hierarchy', JSON.stringify(newDict));
-                // บันทึกรายชื่อหน่วยงานลง Google Sheet ด้วย (ให้จำถาวรทุกเครื่อง)
-                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                    fetch(GOOGLE_SHEETS_URL, {
-                        method: 'POST', mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ type: 'hierarchy_update', hierarchy: newDict })
-                    }).catch(err => console.error('บันทึกหน่วยงานลงชีตล้มเหลว:', err));
+            const handleUpdateHierarchy = async (newDict) => {
+                try {
+                    const actual = await postAndVerify(
+                        { type: 'hierarchy_update', hierarchy: newDict },
+                        () => jsonpRequest({ action: 'getHierarchy' }),
+                        value => stableJson(value || {}) === stableJson(newDict), 'โครงสร้างหน่วยงาน'
+                    );
+                    const newHierarchy = buildHierarchy(actual);
+                    const updatedPasswords = { ...passwords };
+                    const defaultPwd = await hashPassword('1234');
+                    newHierarchy.leaves.forEach(u => { if (!updatedPasswords[u]) updatedPasswords[u] = defaultPwd; });
+                    await postAndVerify(
+                        { type: 'access_update', units: updatedPasswords },
+                        () => jsonpRequest({ action: 'getAccess' }),
+                        value => stableJson(normalizePasswordMap(value?.units || {})) === stableJson(updatedPasswords), 'สิทธิ์หน่วยงาน'
+                    );
+                    setHierarchy(newHierarchy); setPasswords(updatedPasswords);
+                    localStorage.setItem('energy_hierarchy', JSON.stringify(newHierarchy.dict)); localStorage.setItem('energy_units', JSON.stringify(updatedPasswords));
+                    await loadCloudSettings({ showState: false });
+                    showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบโครงสร้างหน่วยงานล่าสุดใน Google Sheets แล้ว', type: 'alert' });
+                } catch (error) {
+                    setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
+                    showModal({ title: 'บันทึกไม่สำเร็จ', message: error.message, type: 'error' }); throw error;
                 }
-                
-                // Update passwords for new units (default '1234')
-                const updatedPasswords = { ...passwords };
-                let needPwdUpdate = false;
-                hashPassword('1234').then(defaultPwd => {
-                    newHierarchy.leaves.forEach(u => {
-                        if (!updatedPasswords[u]) {
-                            updatedPasswords[u] = defaultPwd;
-                            needPwdUpdate = true;
-                        }
-                    });
-                    if (needPwdUpdate) {
-                        setPasswords(updatedPasswords);
-                        localStorage.setItem('energy_units', JSON.stringify(updatedPasswords));
-                        if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                            fetch(GOOGLE_SHEETS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ type: 'access_update', units: updatedPasswords }) }).catch(()=>{});
-                        }
-                    }
-                });
             };
 
             const handleUpdateStandards = async (year, newStandards) => {
-                const newData = data.map(d => {
-                    if (d.year === year && newStandards[d.unit]) {
-                        return {
-                            ...d,
-                            electricity: { ...d.electricity, standard: newStandards[d.unit].elec },
-                            water: { ...d.water, standard: newStandards[d.unit].water }
-                        };
-                    }
-                    return d;
-                });
-                setData(newData);
-                localStorage.setItem('energy_data', JSON.stringify(newData));
-                // บันทึกค่า Baseline ลงแท็บ Settings ในชีตด้วย (ให้จำถาวรทุกเครื่อง)
-                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                    fetch(GOOGLE_SHEETS_URL, {
-                        method: 'POST', mode: 'no-cors',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ type: 'baseline_update', year: year, standards: newStandards })
-                    }).catch(err => console.error('บันทึกค่าอ้างอิงลงชีตล้มเหลว:', err));
+                try {
+                    const normalized = Object.fromEntries(Object.entries(newStandards).map(([u, v]) => [u, { elec: Number(v.elec) || 0, water: Number(v.water) || 0 }]));
+                    const actual = await postAndVerify(
+                        { type: 'baseline_update', year, standards: normalized },
+                        () => jsonpRequest({ action: 'getBaseline', year }),
+                        value => stableJson(Object.fromEntries(Object.entries(value || {}).map(([u, v]) => [u, { elec: Number(v.elec) || 0, water: Number(v.water) || 0 }]))) === stableJson(normalized), `Baseline ปี ${year}`
+                    );
+                    const verified = Object.fromEntries(Object.entries(actual || {}).map(([u, v]) => [u, { elec: Number(v.elec) || 0, water: Number(v.water) || 0 }]));
+                    const nextBaselines = { ...baselines, [year]: verified }; setBaselines(nextBaselines); localStorage.setItem('energy_baselines', JSON.stringify(nextBaselines));
+                    const newData = data.map(d => d.year === year && verified[d.unit] ? ({ ...d, electricity: { ...d.electricity, standard: verified[d.unit].elec }, water: { ...d.water, standard: verified[d.unit].water } }) : d);
+                    setData(newData); localStorage.setItem('energy_data', JSON.stringify(newData));
+                    await loadCloudSettings({ showState: false });
+                    showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบค่า Baseline ล่าสุดใน Google Sheets แล้ว', type: 'alert' });
+                } catch (error) {
+                    setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
+                    showModal({ title: 'บันทึกไม่สำเร็จ', message: error.message, type: 'error' }); throw error;
                 }
-                showModal({ title: 'สำเร็จ', message: 'บันทึกค่าอ้างอิงเรียบร้อยแล้ว (ซิงก์ขึ้นชีตแล้ว)', type: 'alert' });
             };
 
-            const syncAccessToSheet = (bundle) => {
-                if (typeof GOOGLE_SHEETS_URL === 'undefined' || !GOOGLE_SHEETS_URL || GOOGLE_SHEETS_URL.trim() === '') return;
-                fetch(GOOGLE_SHEETS_URL, {
-                    method: 'POST', mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(Object.assign({ type: 'access_update' }, bundle))
-                }).catch(err => console.error('ซิงก์รหัสผ่าน/สิทธิ์ลงชีตล้มเหลว:', err));
-            };
-            const handleUpdateAccess = (type, value, typeName) => {
-                if (type === 'adminPasswords') { setAdminPasswords(value); localStorage.setItem('energy_admins', JSON.stringify(value)); syncAccessToSheet({ admins: value }); }
-                if (type === 'execPasswords') { setExecPasswords(value); localStorage.setItem('energy_execs', JSON.stringify(value)); syncAccessToSheet({ execs: value }); }
-                if (type === 'passwords') { setPasswords(value); localStorage.setItem('energy_units', JSON.stringify(value)); syncAccessToSheet({ units: value }); }
-                if (type === 'announcement') { setAnnouncement(value); localStorage.setItem('energy_announcement', value); syncAccessToSheet({ announcement: value }); }
-                addLog('ตั้งค่าระบบ', `อัปเดตข้อมูล ${typeName}`);
-                showModal({ title: 'สำเร็จ', message: `บันทึกข้อมูล ${typeName} เรียบร้อยแล้ว`, type: 'alert' });
+            const handleUpdateAccess = async (type, value, typeName) => {
+                const keyMap = { adminPasswords: 'admins', execPasswords: 'execs', passwords: 'units', announcement: 'announcement' };
+                const key = keyMap[type];
+                try {
+                    await postAndVerify(
+                        { type: 'access_update', [key]: value },
+                        () => jsonpRequest({ action: 'getAccess' }),
+                        actual => stableJson(actual?.[key] ?? (key === 'announcement' ? '' : {})) === stableJson(value), typeName
+                    );
+                    if (type === 'adminPasswords') { setAdminPasswords(value); localStorage.setItem('energy_admins', JSON.stringify(value)); }
+                    if (type === 'execPasswords') { setExecPasswords(value); localStorage.setItem('energy_execs', JSON.stringify(value)); }
+                    if (type === 'passwords') { setPasswords(value); localStorage.setItem('energy_units', JSON.stringify(value)); }
+                    if (type === 'announcement') { setAnnouncement(value); localStorage.setItem('energy_announcement', value); }
+                    await loadCloudSettings({ showState: false }); addLog('ตั้งค่าระบบ', `อัปเดตข้อมูล ${typeName}`);
+                    showModal({ title: 'บันทึกสำเร็จ', message: `ตรวจพบข้อมูล ${typeName} ล่าสุดใน Google Sheets แล้ว`, type: 'alert' });
+                } catch (error) {
+                    setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
+                    showModal({ title: 'บันทึกไม่สำเร็จ', message: error.message, type: 'error' }); throw error;
+                }
             };
 
             const handleRestore = (parsedBackup) => {
@@ -2844,6 +2861,16 @@
                 if (parsedBackup.execs) localStorage.setItem('energy_execs', parsedBackup.execs);
                 if (parsedBackup.units) localStorage.setItem('energy_units', parsedBackup.units);
                 if (parsedBackup.announcement !== undefined) localStorage.setItem('energy_announcement', parsedBackup.announcement);
+            };
+
+            const cloudSnapshot = cloudSettings ? {
+                hierarchy: cloudSettings.hierarchy || {}, admins: cloudSettings.access?.admins || {}, execs: cloudSettings.access?.execs || {},
+                units: normalizePasswordMap(cloudSettings.access?.units || {}), announcement: cloudSettings.access?.announcement || '', baselines: cloudSettings.baselines || {}
+            } : null;
+            const settingsComparison = cloudSnapshot ? (stableJson(settingsSnapshot()) === stableJson(cloudSnapshot) ? 'match' : 'different') : 'unknown';
+            const reloadSettingsFromSheet = async () => {
+                try { await loadCloudSettings({ showState: true }); await refreshDatabase({ allowCacheFallback: false, silent: true }); }
+                catch (error) { showModal({ title: 'โหลดจากชีตไม่สำเร็จ', message: error.message, type: 'error' }); }
             };
 
             if (isLoading) {
@@ -3007,13 +3034,14 @@
                         </header>
 
                         <main className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar print:p-0 print:overflow-visible">
+                            {(activeTab.startsWith('settings_') || activeTab === 'audit') && <SettingsSyncPanel status={settingsSync.status} message={settingsSync.message} lastSyncAt={settingsSync.at} comparison={settingsComparison} onReload={reloadSettingsFromSheet} />}
                             {activeTab === 'dashboard' && <Dashboard unit={selectedDashboardUnit} month={globalMonth} year={selectedYear} data={data} activeCategory={activeCategory} hierarchy={hierarchy} currentUser={currentUser} />}
                             {activeTab === 'entry' && <DataEntryForm data={data} onSave={handleSaveData} currentUser={currentUser} globalMonth={globalMonth} selectedYear={selectedYear} hierarchy={hierarchy} onAddLog={addLog} showModal={showModal} />}
                             {activeTab === 'status' && <StatusTracking data={data} month={globalMonth === 'สรุปรายปี' ? MONTHS[new Date().getMonth()] : globalMonth} year={selectedYear} hierarchy={hierarchy} />}
                             {activeTab === 'export' && <ReportExport data={data} month={globalMonth} year={selectedYear} hierarchy={hierarchy} currentUser={currentUser} />}
-                            {activeTab === 'settings_unit' && <UnitSettings hierarchy={hierarchy} onUpdateHierarchy={handleUpdateHierarchy} onAddLog={addLog} showModal={showModal} />}
-                            {activeTab === 'settings_std' && <StandardSettings data={data} year={selectedYear} onUpdateStandards={handleUpdateStandards} hierarchy={hierarchy} onAddLog={addLog} showModal={showModal} />}
-                            {activeTab === 'settings_access' && <AccessSettings adminPasswords={adminPasswords} execPasswords={execPasswords} unitPasswords={passwords} hierarchy={hierarchy} globalAnnouncement={announcement} onUpdateAccess={handleUpdateAccess} showModal={showModal} currentUser={currentUser} />}
+                            {activeTab === 'settings_unit' && <UnitSettings hierarchy={hierarchy} onUpdateHierarchy={handleUpdateHierarchy} onAddLog={addLog} showModal={showModal} syncBusy={settingsSync.status === 'saving' || settingsSync.status === 'loading'} />}
+                            {activeTab === 'settings_std' && <StandardSettings data={data} baselines={baselines} year={selectedYear} onUpdateStandards={handleUpdateStandards} hierarchy={hierarchy} onAddLog={addLog} showModal={showModal} syncBusy={settingsSync.status === 'saving' || settingsSync.status === 'loading'} />}
+                            {activeTab === 'settings_access' && <AccessSettings adminPasswords={adminPasswords} execPasswords={execPasswords} unitPasswords={passwords} hierarchy={hierarchy} globalAnnouncement={announcement} onUpdateAccess={handleUpdateAccess} showModal={showModal} currentUser={currentUser} syncBusy={settingsSync.status === 'saving' || settingsSync.status === 'loading'} />}
                             {activeTab === 'settings_backup' && <BackupSettings data={data} logs={logs} hierarchy={hierarchy} showModal={showModal} onRestore={handleRestore} />}
                             {activeTab === 'audit' && <AuditLogs logs={logs} />}
                         </main>
