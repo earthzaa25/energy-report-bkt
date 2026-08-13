@@ -781,25 +781,33 @@
         function UnitSettings({ hierarchy, onUpdateHierarchy, onAddLog, showModal, syncBusy }) {
             const [newParentName, setNewParentName] = useState('');
             const [newChildNames, setNewChildNames] = useState({});
+            const [unitSearch, setUnitSearch] = useState('');
+            const cleanName = value => String(value || '').trim().replace(/\s+/g, ' ');
+            const filteredParents = hierarchy.parents.filter(parent => {
+                const q = unitSearch.trim().toLowerCase();
+                return !q || parent.toLowerCase().includes(q) || (hierarchy.dict[parent] || []).some(child => child.toLowerCase().includes(q));
+            });
 
             const handleAddParent = async () => {
-                if (newParentName.trim() === '') return;
-                if (hierarchy.parents.includes(newParentName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อกลุ่มหน่วยงานนี้มีอยู่แล้วในระบบ', type: 'error'});
-                const updatedDict = { ...hierarchy.dict, [newParentName]: [newParentName] };
-                try { await onUpdateHierarchy(updatedDict); onAddLog('เพิ่มกลุ่มหน่วยงาน', `เพิ่มกลุ่มหน่วยแม่: ${newParentName}`); setNewParentName(''); } catch (_) {}
+                const parentName = cleanName(newParentName);
+                if (!parentName) return;
+                if (hierarchy.parents.includes(parentName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อกลุ่มหน่วยงานนี้มีอยู่แล้วในระบบ', type: 'error'});
+                const updatedDict = { ...hierarchy.dict, [parentName]: [parentName] };
+                try { await onUpdateHierarchy(updatedDict); onAddLog('เพิ่มกลุ่มหน่วยงาน', `เพิ่มกลุ่มหน่วยแม่: ${parentName}`); setNewParentName(''); } catch (_) {}
             };
 
             const handleAddChild = async (parent) => {
-                const childName = newChildNames[parent];
-                if (!childName || childName.trim() === '') return;
+                const childName = cleanName(newChildNames[parent]);
+                if (!childName) return;
                 if (hierarchy.leaves.includes(childName)) return showModal({title: 'เกิดข้อผิดพลาด', message: 'ชื่อหน่วยงานย่อยนี้มีอยู่แล้วในระบบ ไม่สามารถซ้ำได้', type: 'error'});
                 const updatedChildren = [...hierarchy.dict[parent], childName];
                 try { await onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren }); onAddLog('เพิ่มหน่วยงานย่อย', `เพิ่ม ${childName} ภายใต้กลุ่ม ${parent}`); setNewChildNames(prev => ({ ...prev, [parent]: '' })); } catch (_) {}
             };
 
             const handleDeleteChild = (parent, child) => {
+                if (child === parent) return showModal({ title: 'ลบหน่วยหลักไม่ได้จากรายการย่อย', message: `หากต้องการลบ "${parent}" ให้ใช้ปุ่มถังขยะที่หัวกลุ่ม เพื่อให้ลบทั้งกลุ่มและสิทธิ์ที่เกี่ยวข้องอย่างถูกต้อง`, type: 'alert' });
                 showModal({
-                    title: 'ยืนยันการลบ', message: `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยงาน "${child}" ออกจากระบบ?`, type: 'confirm',
+                    title: 'ยืนยันการลบหน่วยงาน', message: `ต้องการลบ "${child}" ออกจากโครงสร้างและลบสิทธิ์เข้าสู่ระบบของหน่วยนี้ด้วยใช่หรือไม่? ข้อมูลรายงานเดิมจะไม่ถูกลบ`, type: 'confirm',
                     onConfirm: async () => {
                         const updatedChildren = hierarchy.dict[parent].filter(c => c !== child);
                         try { await onUpdateHierarchy({ ...hierarchy.dict, [parent]: updatedChildren }); onAddLog('ลบหน่วยงานย่อย', `ลบ ${child} ออกจากกลุ่ม ${parent}`); } catch (_) {}
@@ -824,7 +832,7 @@
                             <Network className="w-6 h-6 text-emerald-600 mr-3" />
                             <div>
                                 <h3 className="font-bold text-lg text-slate-800 leading-tight">โครงสร้างหน่วยงานในระบบ</h3>
-                                <p className="text-xs text-slate-500 mt-1">เพิ่มหรือลดรายชื่อหน่วยงาน เพื่อควบคุมสิทธิ์การเข้าระบบและผังการวิเคราะห์ผล</p>
+                                <p className="text-xs text-slate-500 mt-1">เพิ่มหรือลดรายชื่อหน่วยงาน ระบบจะซิงก์ทั้งโครงสร้างและสิทธิ์เข้าสู่ Google Sheets</p>
                             </div>
                         </div>
                         
@@ -832,19 +840,23 @@
                             <input type="text" placeholder="พิมพ์ชื่อกลุ่มหน่วยงานหลัก (เช่น สส.ทหาร)" className="border border-slate-300 rounded-lg p-2.5 text-sm flex-1 min-w-0 focus:ring-2 focus:ring-emerald-500 outline-none" value={newParentName} onChange={e => setNewParentName(e.target.value)} />
                             <button disabled={syncBusy} onClick={handleAddParent} className="bg-[#1e293b] disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-bold hover:bg-black transition-colors shadow-sm whitespace-nowrap">+ เพิ่มกลุ่มหน่วยแม่</button>
                         </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+                            <div className="flex gap-2 text-xs font-bold"><span className="bg-slate-100 text-slate-600 px-3 py-2 rounded-lg">{hierarchy.parents.length} กลุ่ม</span><span className="bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg">{hierarchy.leaves.length} หน่วย</span></div>
+                            <input value={unitSearch} onChange={e => setUnitSearch(e.target.value)} placeholder="ค้นหากลุ่มหรือหน่วยงาน..." className="w-full sm:w-72 border border-slate-300 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500" />
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {hierarchy.parents.map(parent => (
+                            {filteredParents.map(parent => (
                                 <div key={parent} className="border border-slate-200 rounded-xl shadow-sm bg-white overflow-hidden flex flex-col transition-all hover:shadow-md">
                                     <div className="bg-slate-100 p-3.5 flex justify-between items-center border-b border-slate-200">
                                         <h4 className="font-bold text-sm truncate flex-1 text-slate-800">{parent}</h4>
-                                        <button onClick={() => handleDeleteParent(parent)} title="ลบกลุ่มนี้" className="text-slate-400 hover:text-rose-500 hover:bg-white p-1 rounded transition-colors ml-2"><Trash2 className="w-4 h-4" /></button>
+                                        <button disabled={syncBusy} onClick={() => handleDeleteParent(parent)} title="ลบกลุ่มนี้" className="text-slate-400 disabled:opacity-40 hover:text-rose-500 hover:bg-white p-1 rounded transition-colors ml-2"><Trash2 className="w-4 h-4" /></button>
                                     </div>
                                     <div className="p-3 flex-1 overflow-y-auto max-h-60 bg-slate-50/50 custom-scrollbar">
                                         <ul className="space-y-1.5">
                                             {hierarchy.dict[parent].map((child, idx) => (
                                                 <li key={child} className="flex justify-between items-center bg-white px-3 py-2 rounded-lg border border-slate-100 shadow-sm text-[13px] group">
                                                     <span className={`truncate ${idx===0 ? 'font-bold text-emerald-700' : 'text-slate-600 font-medium'}`}>{idx===0 ? `▪ ${child}` : `- ${child}`}</span>
-                                                    <button onClick={() => handleDeleteChild(parent, child)} className="text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-opacity"><XCircle className="w-4 h-4" /></button>
+                                                    <button disabled={syncBusy || child === parent} onClick={() => handleDeleteChild(parent, child)} title={child === parent ? 'หน่วยหลัก: ให้ลบจากหัวกลุ่ม' : 'ลบหน่วยนี้'} className={`transition-opacity ${child === parent ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-rose-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'}`}><XCircle className="w-4 h-4" /></button>
                                                 </li>
                                             ))}
                                         </ul>
@@ -852,12 +864,13 @@
                                     <div className="p-3 bg-white border-t border-slate-100">
                                         <div className="flex space-x-2">
                                             <input type="text" placeholder="พิมพ์ชื่อหน่วยย่อย..." className="border border-slate-300 rounded-lg px-3 py-1.5 flex-1 text-[13px] focus:ring-2 focus:ring-emerald-500 outline-none" value={newChildNames[parent] || ''} onChange={e => setNewChildNames(prev => ({...prev, [parent]: e.target.value}))} onKeyDown={e => e.key === 'Enter' && handleAddChild(parent)} />
-                                            <button onClick={() => handleAddChild(parent)} className="bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">เพิ่ม</button>
+                                            <button disabled={syncBusy} onClick={() => handleAddChild(parent)} className="bg-emerald-50 disabled:opacity-40 text-emerald-600 hover:bg-emerald-600 hover:text-white px-3 py-1.5 rounded-lg text-[13px] font-bold transition-colors">เพิ่ม</button>
                                         </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                        {filteredParents.length === 0 && <div className="py-12 text-center text-sm text-slate-400">ไม่พบหน่วยงานที่ตรงกับคำค้นหา</div>}
                     </div>
                 </div>
             );
@@ -2818,7 +2831,9 @@
                         value => stableJson(value || {}) === stableJson(newDict), 'โครงสร้างหน่วยงาน'
                     );
                     const newHierarchy = buildHierarchy(actual);
-                    const updatedPasswords = { ...passwords };
+                    // ใช้เฉพาะหน่วยที่ยังอยู่ใน hierarchy เพื่อไม่ให้สิทธิ์เก่าดึงหน่วยที่ลบกลับมาอีก
+                    const allowedUnits = new Set(newHierarchy.leaves);
+                    const updatedPasswords = Object.fromEntries(Object.entries(passwords).filter(([unit]) => allowedUnits.has(unit)));
                     const defaultPwd = await hashPassword('1234');
                     newHierarchy.leaves.forEach(u => { if (!updatedPasswords[u]) updatedPasswords[u] = defaultPwd; });
                     await postAndVerify(
@@ -2829,7 +2844,7 @@
                     setHierarchy(newHierarchy); setPasswords(updatedPasswords);
                     localStorage.setItem('energy_hierarchy', JSON.stringify(newHierarchy.dict)); localStorage.setItem('energy_units', JSON.stringify(updatedPasswords));
                     await loadCloudSettings({ showState: false });
-                    showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบโครงสร้างหน่วยงานล่าสุดใน Google Sheets แล้ว', type: 'alert' });
+                    showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบโครงสร้างและสิทธิ์หน่วยงานล่าสุดใน Google Sheets แล้ว หน่วยที่ลบจะไม่ถูกดึงกลับมาอีก', type: 'alert' });
                 } catch (error) {
                     setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
                     showModal({ title: 'บันทึกไม่สำเร็จ', message: error.message, type: 'error' }); throw error;
