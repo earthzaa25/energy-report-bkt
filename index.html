@@ -504,9 +504,6 @@
                         </form>
                     </div>
                     
-                    <p className="absolute bottom-6 text-xs font-medium text-slate-400/80 z-10 text-center w-full">
-                        Secure • Cloud synchronized • Fast startup <br/> Energy Dashboard v3.0
-                    </p>
                 </div>
             );
         }
@@ -2533,7 +2530,8 @@
             const [lastSyncAt, setLastSyncAt] = useState(initialCache.lastSync);
             const [isSyncing, setIsSyncing] = useState(false);
             const [modalState, setModalState] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
-            const settingsLoadStarted = useRef(false);
+            const baselineLoadStarted = useRef(false);
+            const logsLoadStarted = useRef(false);
 
             const showModal = (options) => {
                 setModalState({ isOpen: true, ...options });
@@ -2585,8 +2583,6 @@
                 const sortValue = v => Array.isArray(v) ? v.map(sortValue) : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sortValue(v[k]); return o; }, {}) : v);
                 return JSON.stringify(sortValue(value));
             };
-            const settingsSnapshot = () => ({ hierarchy: hierarchy.dict, admins: adminPasswords, execs: execPasswords, units: passwords, announcement, baselines });
-
             const applyCloudBootstrap = ({ access, hierarchy: cloudHierarchy }) => {
                 const safeAccess = access && typeof access === 'object' ? access : {};
                 const admins = safeAccess.admins && typeof safeAccess.admins === 'object' ? safeAccess.admins : {};
@@ -2605,14 +2601,6 @@
                 return { access: { admins, execs, units, announcement: typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '' }, hierarchy: safeHierarchy.dict };
             };
 
-            const applyCloudSettings = ({ access, hierarchy: cloudHierarchy, baselines: cloudBaselines, logs: cloudLogs }) => {
-                applyCloudBootstrap({ access, hierarchy: cloudHierarchy });
-                setBaselines(cloudBaselines && typeof cloudBaselines === 'object' ? cloudBaselines : {});
-                if (Array.isArray(cloudLogs)) setLogs(cloudLogs);
-                localStorage.setItem('energy_baselines', JSON.stringify(cloudBaselines || {}));
-                if (Array.isArray(cloudLogs)) localStorage.setItem('energy_logs', JSON.stringify(cloudLogs));
-            };
-
             const loadBootstrap = async () => {
                 const hasLocalCredentials = Object.keys(adminPasswords).length + Object.keys(execPasswords).length + Object.keys(passwords).length > 0;
                 setAuthStatus(hasLocalCredentials ? 'cached' : 'loading');
@@ -2627,6 +2615,7 @@
                     }
                     if (!raw || !raw.access || !raw.hierarchy) throw new Error('Bootstrap response ไม่ครบถ้วน');
                     applyCloudBootstrap(raw);
+                    setCloudSettings(prev => ({ ...(prev || {}), access: raw.access, hierarchy: raw.hierarchy }));
                     const now = new Date();
                     localStorage.setItem('energy_auth_last_sync', now.toISOString());
                     setAuthStatus('online'); setAuthMessage(`ซิงก์ข้อมูลสิทธิ์ล่าสุด ${now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`);
@@ -2639,27 +2628,33 @@
                 }
             };
 
-            const loadCloudSettings = async ({ showState = true } = {}) => {
-                if (showState) setSettingsSync({ status: 'loading', message: 'กำลังอ่าน Settings และ Audit Logs จากข้อมูลกลาง', at: settingsSync.at });
+            const loadBaselinesOnly = async ({ force = false } = {}) => {
+                if (baselineLoadStarted.current && !force) return;
+                baselineLoadStarted.current = true;
+                setSettingsSync(prev => ({ status: 'loading', message: 'กำลังโหลด Baseline รายปีจาก Google Sheets', at: prev.at }));
                 try {
-                    let bundle;
-                    try {
-                        bundle = unwrapApi(await jsonpRequest({ action: 'getSettingsBundle', limit: '500' }, 90000));
-                    } catch (bundleError) {
-                        const [accessRaw, hierarchyRaw, baselinesRaw, logsRaw] = await Promise.all([
-                            jsonpRequest({ action: 'getAccess' }, 90000), jsonpRequest({ action: 'getHierarchy' }, 90000),
-                            jsonpRequest({ action: 'getAllBaselines' }, 60000), jsonpRequest({ action: 'getLogs', limit: '500' }, 90000)
-                        ]);
-                        bundle = { access: unwrapApi(accessRaw), hierarchy: unwrapApi(hierarchyRaw), baselines: unwrapApi(baselinesRaw), logs: unwrapApi(logsRaw) };
-                    }
-                    const cloud = { access: bundle?.access || {}, hierarchy: bundle?.hierarchy || {}, baselines: bundle?.baselines || {}, logs: bundle?.logs || [] };
-                    applyCloudSettings(cloud);
-                    setCloudSettings(cloud);
-                    const at = new Date();
-                    setSettingsSync({ status: 'success', message: 'โหลดค่าล่าสุดจาก Google Sheets เรียบร้อย', at });
-                    return cloud;
+                    const value = unwrapApi(await jsonpRequest({ action: 'getAllBaselines' }, 60000)) || {};
+                    setBaselines(value); localStorage.setItem('energy_baselines', JSON.stringify(value));
+                    setCloudSettings(prev => ({ ...(prev || {}), baselines: value }));
+                    const at = new Date(); setSettingsSync({ status: 'success', message: 'โหลด Baseline รายปีเรียบร้อย', at });
                 } catch (error) {
-                    setSettingsSync({ status: 'error', message: `${error.message || 'โหลด Settings ไม่สำเร็จ'} — กำลังแสดงข้อมูลสำรองในเครื่อง`, at: settingsSync.at });
+                    setSettingsSync(prev => ({ status: 'error', message: `โหลด Baseline ไม่สำเร็จ — แสดงข้อมูลสำรองในเครื่อง`, at: prev.at }));
+                    throw error;
+                }
+            };
+
+            const loadLogsOnly = async ({ force = false } = {}) => {
+                if (logsLoadStarted.current && !force) return;
+                logsLoadStarted.current = true;
+                setSettingsSync(prev => ({ status: 'loading', message: 'กำลังโหลด Audit Logs ล่าสุด', at: prev.at }));
+                try {
+                    const value = unwrapApi(await jsonpRequest({ action: 'getLogs', limit: '200' }, 60000)) || [];
+                    if (!Array.isArray(value)) throw new Error('รูปแบบ Audit Logs ไม่ถูกต้อง');
+                    setLogs(value); localStorage.setItem('energy_logs', JSON.stringify(value));
+                    setCloudSettings(prev => ({ ...(prev || {}), logs: value }));
+                    const at = new Date(); setSettingsSync({ status: 'success', message: `โหลด Audit Logs ล่าสุด ${value.length} รายการ`, at });
+                } catch (error) {
+                    setSettingsSync(prev => ({ status: 'error', message: `โหลด Audit Logs ไม่สำเร็จ — แสดงข้อมูลสำรองในเครื่อง`, at: prev.at }));
                     throw error;
                 }
             };
@@ -2778,10 +2773,12 @@
             }, [currentUser]);
 
             useEffect(() => {
-                const isSettingsArea = activeTab.startsWith('settings_') || activeTab === 'audit';
-                if (!currentUser || currentUser.role !== 'admin' || !isSettingsArea || settingsLoadStarted.current) return;
-                settingsLoadStarted.current = true;
-                loadCloudSettings({ showState: true }).catch(error => console.warn('โหลด Settings แบบละเอียดไม่สำเร็จ:', error));
+                if (!currentUser || currentUser.role !== 'admin') return;
+                if (activeTab === 'settings_std') loadBaselinesOnly().catch(error => console.warn('ใช้ Baseline จาก cache:', error));
+                if (activeTab === 'audit') loadLogsOnly().catch(error => console.warn('ใช้ Logs จาก cache:', error));
+                if (activeTab === 'settings_unit' || activeTab === 'settings_access' || activeTab === 'settings_backup') {
+                    setSettingsSync(prev => prev.status === 'loading' ? prev : ({ status: authStatus === 'online' ? 'success' : 'error', message: authStatus === 'online' ? 'สิทธิ์และโครงสร้างหน่วยงานพร้อมใช้งาน' : 'แสดงข้อมูลล่าสุดในเครื่อง', at: prev.at }));
+                }
             }, [activeTab, currentUser]);
 
             const addLog = (action, details, actorOverride = null) => {
@@ -2961,13 +2958,23 @@
                 if (parsedBackup.announcement !== undefined) localStorage.setItem('energy_announcement', parsedBackup.announcement);
             };
 
-            const cloudSnapshot = cloudSettings ? {
-                hierarchy: cloudSettings.hierarchy || {}, admins: cloudSettings.access?.admins || {}, execs: cloudSettings.access?.execs || {},
-                units: normalizePasswordMap(cloudSettings.access?.units || {}), announcement: cloudSettings.access?.announcement || '', baselines: cloudSettings.baselines || {}
-            } : null;
-            const settingsComparison = cloudSnapshot ? (stableJson(settingsSnapshot()) === stableJson(cloudSnapshot) ? 'match' : 'different') : 'unknown';
+            const settingsComparison = (() => {
+                if (!cloudSettings) return 'unknown';
+                if (activeTab === 'settings_unit') return stableJson(hierarchy.dict) === stableJson(cloudSettings.hierarchy || {}) ? 'match' : 'different';
+                if (activeTab === 'settings_access') {
+                    const localAccess = { admins: adminPasswords, execs: execPasswords, units: passwords, announcement };
+                    const cloudAccess = { admins: cloudSettings.access?.admins || {}, execs: cloudSettings.access?.execs || {}, units: normalizePasswordMap(cloudSettings.access?.units || {}), announcement: cloudSettings.access?.announcement || '' };
+                    return stableJson(localAccess) === stableJson(cloudAccess) ? 'match' : 'different';
+                }
+                if (activeTab === 'settings_std') return stableJson(baselines) === stableJson(cloudSettings.baselines || {}) ? 'match' : 'different';
+                return 'unknown';
+            })();
             const reloadSettingsFromSheet = async () => {
-                try { await loadCloudSettings({ showState: true }); }
+                try {
+                    if (activeTab === 'settings_std') return await loadBaselinesOnly({ force: true });
+                    if (activeTab === 'audit') return await loadLogsOnly({ force: true });
+                    await loadBootstrap();
+                }
                 catch (error) { showModal({ title: 'โหลดจากชีตไม่สำเร็จ', message: error.message, type: 'error' }); }
             };
 
