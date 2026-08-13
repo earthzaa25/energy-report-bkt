@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ระบบรายงานพลังงาน บก.ทท. (Enterprise Edition)</title>
+    <link rel="preconnect" href="https://script.google.com">
+    <link rel="preconnect" href="https://script.googleusercontent.com">
+    <link rel="dns-prefetch" href="https://script.google.com">
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -77,7 +80,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useMemo, useEffect, Fragment, Component } = React;
+        const { useState, useMemo, useEffect, useRef, Fragment, Component } = React;
         const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ComposedChart, Line, Cell, PieChart, Pie, AreaChart, Area } = window.Recharts;
 
         // 🌟 ระบบดักจับ Error ป้องกันหน้าจอขาว (Error Boundary)
@@ -258,26 +261,6 @@
             });
             return clean;
         };
-        const mergeHierarchyWithUnits = (baseHierarchy, unitKeys) => {
-            const dict = sanitizeHierarchyDict(baseHierarchy?.dict || baseHierarchy || DEFAULT_HIERARCHY);
-            const existing = new Set(Object.values(dict).flat());
-            unitKeys.map(normalizeUnitName).filter(Boolean).forEach(unit => {
-                if (existing.has(unit)) return;
-                let parent = 'หน่วยงานอื่น';
-                if (/^(สนภ\.1|นพค\.1|วส\.934|ช\.พัฒนา)/.test(unit)) parent = 'สนภ.1 นทพ.';
-                else if (/^(สนภ\.2|นพค\.2)/.test(unit)) parent = 'สนภ.2 นทพ.';
-                else if (/^(สนภ\.3|นพค\.3)/.test(unit)) parent = 'สนภ.3 นทพ.';
-                else if (/^(สนภ\.4|นพค\.4)/.test(unit)) parent = 'สนภ.4 นทพ.';
-                else if (/^(สนภ\.5|นพค\.5)/.test(unit)) parent = 'สนภ.5 นทพ.';
-                else if (unit.startsWith('สน.ทท.') || unit === 'สส.ทหาร') parent = 'สส.ทหาร';
-                else if (unit === 'นทพ. (บก.นทพ.)') parent = 'นทพ. (บก.นทพ.)';
-                if (!dict[parent]) dict[parent] = [];
-                dict[parent].push(unit);
-                existing.add(unit);
-            });
-            return buildHierarchy(dict);
-        };
-
         const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
         const YEARS = ['2567', '2568', '2569', '2570', '2571'];
 
@@ -395,7 +378,7 @@
             return null;
         };
 
-        function LoginScreen({ onLogin, hierarchy, globalAnnouncement }) {
+        function LoginScreen({ onLogin, hierarchy, globalAnnouncement, authStatus, authMessage, hasCredentials, onRetry }) {
             const [role, setRole] = useState('user');
             const [unit, setUnit] = useState(hierarchy.leaves[0] || '');
             const [username, setUsername] = useState('');
@@ -459,6 +442,14 @@
                             </span>
                         </div>
 
+                        <div className={`mb-5 rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${authStatus === 'online' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : authStatus === 'error' ? 'bg-rose-50 border-rose-200 text-rose-700' : authStatus === 'cached' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-sky-50 border-sky-200 text-sky-700'}`}>
+                            <div className="flex items-center min-w-0">
+                                {authStatus === 'loading' ? <SmallLoader className="w-4 h-4 mr-2 flex-shrink-0"/> : authStatus === 'online' ? <CheckCircle2 className="w-4 h-4 mr-2 flex-shrink-0"/> : <Database className="w-4 h-4 mr-2 flex-shrink-0"/>}
+                                <div className="min-w-0"><p className="text-xs font-bold">{authStatus === 'online' ? 'พร้อมใช้งาน' : authStatus === 'cached' ? 'พร้อมใช้งานจากข้อมูลล่าสุด' : authStatus === 'error' ? 'เชื่อมต่อข้อมูลกลางไม่สำเร็จ' : 'กำลังเตรียมสิทธิ์เข้าใช้งาน'}</p><p className="text-[10px] opacity-80 truncate">{authMessage}</p></div>
+                            </div>
+                            {authStatus === 'error' && <button type="button" onClick={onRetry} className="text-[10px] font-bold bg-white border border-current px-2.5 py-1.5 rounded-lg whitespace-nowrap">ลองใหม่</button>}
+                        </div>
+
                         {error && <div className="mb-6 p-3.5 bg-rose-50 border border-rose-100 text-rose-600 text-sm rounded-xl flex items-center animate-in fade-in slide-in-from-top-2 shadow-sm"><AlertCircle className="w-4 h-4 mr-2 flex-shrink-0"/> {error}</div>}
 
                         <form onSubmit={handleSubmit} className="space-y-5">
@@ -506,15 +497,15 @@
                                 </div>
                             </div>
 
-                            <button type="submit" disabled={isAuthenticating} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all duration-300 mt-6 shadow-lg text-sm flex justify-center items-center ${isAuthenticating ? 'bg-emerald-400 cursor-not-allowed' : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 hover:shadow-emerald-500/25 hover:-translate-y-0.5'}`}>
-                                {isAuthenticating ? <SmallLoader className="w-5 h-5 mr-2 text-white" /> : null}
-                                {isAuthenticating ? 'กำลังตรวจสอบสิทธิ์...' : 'ลงชื่อเข้าใช้ระบบ'}
+                            <button type="submit" disabled={isAuthenticating || !hasCredentials} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all duration-300 mt-6 shadow-lg text-sm flex justify-center items-center ${isAuthenticating || !hasCredentials ? 'bg-slate-400 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 hover:shadow-emerald-500/25 hover:-translate-y-0.5'}`}>
+                                {(isAuthenticating || !hasCredentials) ? <SmallLoader className="w-5 h-5 mr-2 text-white" /> : null}
+                                {isAuthenticating ? 'กำลังตรวจสอบสิทธิ์...' : !hasCredentials ? 'กำลังโหลดข้อมูลสิทธิ์...' : 'ลงชื่อเข้าใช้ระบบ'}
                             </button>
                         </form>
                     </div>
                     
                     <p className="absolute bottom-6 text-xs font-medium text-slate-400/80 z-10 text-center w-full">
-                        Together for a greener future. <br/> Energy Dashboard v2.1 (Unit Sync Fixed)
+                        Secure • Cloud synchronized • Fast startup <br/> Energy Dashboard v3.0
                     </p>
                 </div>
             );
@@ -2487,7 +2478,34 @@
         // ==========================================
         // MAIN APPLICATION COMPONENT
         // ==========================================
+        const readLocalJson = (key, fallback) => {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw ? JSON.parse(raw) : fallback;
+            } catch (_) { return fallback; }
+        };
+
+        const getInitialAppCache = () => {
+            const hierarchyRaw = readLocalJson('energy_hierarchy', DEFAULT_HIERARCHY);
+            const cachedHierarchy = buildHierarchy(hierarchyRaw && Object.keys(hierarchyRaw).length ? hierarchyRaw : DEFAULT_HIERARCHY);
+            const admins = readLocalJson('energy_admins', {});
+            const execs = readLocalJson('energy_execs', {});
+            const units = normalizePasswordMap(readLocalJson('energy_units', {}));
+            const syncText = localStorage.getItem('energy_last_sync');
+            const authText = localStorage.getItem('energy_auth_last_sync');
+            return {
+                hierarchy: cachedHierarchy, admins, execs, units,
+                announcement: localStorage.getItem('energy_announcement') || '',
+                baselines: readLocalJson('energy_baselines', {}),
+                data: readLocalJson('energy_data', []), logs: readLocalJson('energy_logs', []),
+                lastSync: syncText ? new Date(syncText) : null,
+                authLastSync: authText ? new Date(authText) : null,
+                hasCredentials: Object.keys(admins).length + Object.keys(execs).length + Object.keys(units).length > 0
+            };
+        };
+
         function App() {
+            const initialCache = useMemo(getInitialAppCache, []);
             // Core States
             const [currentUser, setCurrentUser] = useState(null);
             const [activeTab, setActiveTab] = useState('dashboard');
@@ -2498,26 +2516,24 @@
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             
             // Data States
-            const [data, setData] = useState([]);
-            const [logs, setLogs] = useState([]);
-            const [hierarchy, setHierarchy] = useState({
-                dict: DEFAULT_HIERARCHY,
-                parents: Object.keys(DEFAULT_HIERARCHY),
-                leaves: Object.values(DEFAULT_HIERARCHY).flat()
-            });
-            const [announcement, setAnnouncement] = useState('');
-            const [adminPasswords, setAdminPasswords] = useState({});
-            const [execPasswords, setExecPasswords] = useState({});
-            const [passwords, setPasswords] = useState({});
-            const [baselines, setBaselines] = useState({});
+            const [data, setData] = useState(initialCache.data);
+            const [logs, setLogs] = useState(initialCache.logs);
+            const [hierarchy, setHierarchy] = useState(initialCache.hierarchy);
+            const [announcement, setAnnouncement] = useState(initialCache.announcement);
+            const [adminPasswords, setAdminPasswords] = useState(initialCache.admins);
+            const [execPasswords, setExecPasswords] = useState(initialCache.execs);
+            const [passwords, setPasswords] = useState(initialCache.units);
+            const [baselines, setBaselines] = useState(initialCache.baselines);
             const [cloudSettings, setCloudSettings] = useState(null);
-            const [settingsSync, setSettingsSync] = useState({ status: 'loading', message: 'กำลังโหลดการตั้งค่าจากชีต', at: null });
+            const [settingsSync, setSettingsSync] = useState({ status: initialCache.hasCredentials ? 'success' : 'loading', message: initialCache.hasCredentials ? 'แสดงค่าล่าสุดในเครื่อง กดโหลดใหม่เมื่อต้องการตรวจสอบ' : 'กำลังโหลดการตั้งค่าจากชีต', at: initialCache.authLastSync });
+            const [authStatus, setAuthStatus] = useState(initialCache.hasCredentials ? 'cached' : 'loading');
+            const [authMessage, setAuthMessage] = useState(initialCache.hasCredentials ? `เปิดได้ทันที${initialCache.authLastSync ? ' • ซิงก์ ' + initialCache.authLastSync.toLocaleString('th-TH') : ''}` : 'กำลังเชื่อมต่อ Google Sheets ครั้งแรก');
             
-            const [isLoading, setIsLoading] = useState(true);
-            const [databaseStatus, setDatabaseStatus] = useState('loading');
-            const [lastSyncAt, setLastSyncAt] = useState(null);
+            const [databaseStatus, setDatabaseStatus] = useState(initialCache.data.length ? 'offline-cache' : 'loading');
+            const [lastSyncAt, setLastSyncAt] = useState(initialCache.lastSync);
             const [isSyncing, setIsSyncing] = useState(false);
             const [modalState, setModalState] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+            const settingsLoadStarted = useRef(false);
 
             const showModal = (options) => {
                 setModalState({ isOpen: true, ...options });
@@ -2540,6 +2556,8 @@
             });
 
             const jsonpRequest = async (params = {}, timeoutMs = 60000) => {
+                // หน้าเว็บเปิดจากไฟล์โดยตรง: ใช้ JSONP ทันทีเพื่อไม่เสียเวลารอ fetch/CORS 30 วินาที
+                if (window.location.protocol === 'file:') return jsonpFallback(params, timeoutMs);
                 const query = new URLSearchParams({ ...params, _: Date.now().toString() });
                 const controller = new AbortController();
                 const fetchTimeout = setTimeout(() => controller.abort(), Math.min(timeoutMs, 30000));
@@ -2569,34 +2587,72 @@
             };
             const settingsSnapshot = () => ({ hierarchy: hierarchy.dict, admins: adminPasswords, execs: execPasswords, units: passwords, announcement, baselines });
 
-            const applyCloudSettings = ({ access, hierarchy: cloudHierarchy, baselines: cloudBaselines, logs: cloudLogs }) => {
+            const applyCloudBootstrap = ({ access, hierarchy: cloudHierarchy }) => {
                 const safeAccess = access && typeof access === 'object' ? access : {};
                 const admins = safeAccess.admins && typeof safeAccess.admins === 'object' ? safeAccess.admins : {};
                 const execs = safeAccess.execs && typeof safeAccess.execs === 'object' ? safeAccess.execs : {};
                 const units = normalizePasswordMap(safeAccess.units && typeof safeAccess.units === 'object' ? safeAccess.units : {});
                 const safeHierarchy = buildHierarchy(cloudHierarchy && typeof cloudHierarchy === 'object' && !Array.isArray(cloudHierarchy) && Object.keys(cloudHierarchy).length ? cloudHierarchy : DEFAULT_HIERARCHY);
-                const mergedHierarchy = mergeHierarchyWithUnits(safeHierarchy, Object.keys(units));
                 setAdminPasswords(admins); setExecPasswords(execs); setPasswords(units);
                 setAnnouncement(typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
-                setHierarchy(mergedHierarchy); setBaselines(cloudBaselines && typeof cloudBaselines === 'object' ? cloudBaselines : {});
-                if (Array.isArray(cloudLogs)) setLogs(cloudLogs);
+                // hierarchy เป็นแหล่งข้อมูลหลัก ห้ามดึงหน่วยที่ถูกลบกลับมาจาก access_units
+                setHierarchy(safeHierarchy);
                 localStorage.setItem('energy_admins', JSON.stringify(admins));
                 localStorage.setItem('energy_execs', JSON.stringify(execs));
                 localStorage.setItem('energy_units', JSON.stringify(units));
                 localStorage.setItem('energy_announcement', typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
-                localStorage.setItem('energy_hierarchy', JSON.stringify(mergedHierarchy.dict));
+                localStorage.setItem('energy_hierarchy', JSON.stringify(safeHierarchy.dict));
+                return { access: { admins, execs, units, announcement: typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '' }, hierarchy: safeHierarchy.dict };
+            };
+
+            const applyCloudSettings = ({ access, hierarchy: cloudHierarchy, baselines: cloudBaselines, logs: cloudLogs }) => {
+                applyCloudBootstrap({ access, hierarchy: cloudHierarchy });
+                setBaselines(cloudBaselines && typeof cloudBaselines === 'object' ? cloudBaselines : {});
+                if (Array.isArray(cloudLogs)) setLogs(cloudLogs);
                 localStorage.setItem('energy_baselines', JSON.stringify(cloudBaselines || {}));
                 if (Array.isArray(cloudLogs)) localStorage.setItem('energy_logs', JSON.stringify(cloudLogs));
             };
 
-            const loadCloudSettings = async ({ showState = true } = {}) => {
-                if (showState) setSettingsSync({ status: 'loading', message: 'กำลังอ่าน Access, หน่วยงาน, Baseline และ Audit Logs', at: settingsSync.at });
+            const loadBootstrap = async () => {
+                const hasLocalCredentials = Object.keys(adminPasswords).length + Object.keys(execPasswords).length + Object.keys(passwords).length > 0;
+                setAuthStatus(hasLocalCredentials ? 'cached' : 'loading');
+                setAuthMessage(hasLocalCredentials ? 'หน้าเข้าสู่ระบบพร้อมแล้ว • กำลังตรวจสอบข้อมูลกลางเบื้องหลัง' : 'กำลังโหลดสิทธิ์และรายชื่อหน่วยงานจาก Google Sheets');
                 try {
-                    const [accessRaw, hierarchyRaw, baselinesRaw, logsRaw] = await Promise.all([
-                        jsonpRequest({ action: 'getAccess' }, 90000), jsonpRequest({ action: 'getHierarchy' }, 90000),
-                        jsonpRequest({ action: 'getAllBaselines' }, 60000), jsonpRequest({ action: 'getLogs', limit: '1000' }, 90000)
-                    ]);
-                    const cloud = { access: unwrapApi(accessRaw) || {}, hierarchy: unwrapApi(hierarchyRaw) || {}, baselines: unwrapApi(baselinesRaw) || {}, logs: unwrapApi(logsRaw) || [] };
+                    let raw;
+                    try {
+                        raw = unwrapApi(await jsonpRequest({ action: 'getBootstrap' }, 90000));
+                    } catch (bundleError) {
+                        const [accessRaw, hierarchyRaw] = await Promise.all([jsonpRequest({ action: 'getAccess' }, 90000), jsonpRequest({ action: 'getHierarchy' }, 90000)]);
+                        raw = { access: unwrapApi(accessRaw), hierarchy: unwrapApi(hierarchyRaw), apiVersion: 'legacy' };
+                    }
+                    if (!raw || !raw.access || !raw.hierarchy) throw new Error('Bootstrap response ไม่ครบถ้วน');
+                    applyCloudBootstrap(raw);
+                    const now = new Date();
+                    localStorage.setItem('energy_auth_last_sync', now.toISOString());
+                    setAuthStatus('online'); setAuthMessage(`ซิงก์ข้อมูลสิทธิ์ล่าสุด ${now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`);
+                    setSettingsSync(prev => ({ status: 'success', message: 'สิทธิ์และโครงสร้างหน่วยงานเป็นข้อมูลล่าสุดจากชีต', at: now }));
+                    return raw;
+                } catch (error) {
+                    setAuthStatus('error');
+                    setAuthMessage(hasLocalCredentials ? 'ใช้ข้อมูลล่าสุดในเครื่องได้ • กด “ลองใหม่” เมื่อต้องการซิงก์' : error.message);
+                    throw error;
+                }
+            };
+
+            const loadCloudSettings = async ({ showState = true } = {}) => {
+                if (showState) setSettingsSync({ status: 'loading', message: 'กำลังอ่าน Settings และ Audit Logs จากข้อมูลกลาง', at: settingsSync.at });
+                try {
+                    let bundle;
+                    try {
+                        bundle = unwrapApi(await jsonpRequest({ action: 'getSettingsBundle', limit: '500' }, 90000));
+                    } catch (bundleError) {
+                        const [accessRaw, hierarchyRaw, baselinesRaw, logsRaw] = await Promise.all([
+                            jsonpRequest({ action: 'getAccess' }, 90000), jsonpRequest({ action: 'getHierarchy' }, 90000),
+                            jsonpRequest({ action: 'getAllBaselines' }, 60000), jsonpRequest({ action: 'getLogs', limit: '500' }, 90000)
+                        ]);
+                        bundle = { access: unwrapApi(accessRaw), hierarchy: unwrapApi(hierarchyRaw), baselines: unwrapApi(baselinesRaw), logs: unwrapApi(logsRaw) };
+                    }
+                    const cloud = { access: bundle?.access || {}, hierarchy: bundle?.hierarchy || {}, baselines: bundle?.baselines || {}, logs: bundle?.logs || [] };
                     applyCloudSettings(cloud);
                     setCloudSettings(cloud);
                     const at = new Date();
@@ -2612,11 +2668,15 @@
                 setSettingsSync({ status: 'saving', message: `กำลังบันทึก ${label}`, at: settingsSync.at });
                 let responseReadable = false;
                 try {
-                    const response = await fetch(GOOGLE_SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
-                    responseReadable = true;
-                    if (!response.ok) throw new Error(`Backend ตอบกลับ HTTP ${response.status}`);
-                    const text = await response.text();
-                    if (text) unwrapApi(JSON.parse(text));
+                    if (window.location.protocol === 'file:') {
+                        await fetch(GOOGLE_SHEETS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+                    } else {
+                        const response = await fetch(GOOGLE_SHEETS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
+                        responseReadable = true;
+                        if (!response.ok) throw new Error(`Backend ตอบกลับ HTTP ${response.status}`);
+                        const text = await response.text();
+                        if (text) unwrapApi(JSON.parse(text));
+                    }
                 } catch (error) {
                     if (responseReadable) throw error;
                     await fetch(GOOGLE_SHEETS_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) });
@@ -2636,24 +2696,28 @@
                 if (!silent) setIsSyncing(true);
                 setDatabaseStatus('loading');
                 try {
-                    const sheetData = await jsonpRequest({ action: 'getData' });
+                    let bundle;
+                    try {
+                        bundle = unwrapApi(await jsonpRequest({ action: 'getDashboardBundle' }, 90000));
+                    } catch (bundleError) {
+                        const [dataRaw, baselineRaw] = await Promise.all([jsonpRequest({ action: 'getData' }, 90000), jsonpRequest({ action: 'getAllBaselines' }, 60000)]);
+                        bundle = { data: unwrapApi(dataRaw), baselines: unwrapApi(baselineRaw) };
+                    }
+                    const sheetData = bundle?.data;
                     if (!Array.isArray(sheetData)) throw new Error('รูปแบบข้อมูลจาก Google Sheets ไม่ถูกต้อง');
                     let merged = sheetData;
-                    try {
-                        const baselines = await jsonpRequest({ action: 'getAllBaselines' });
-                        if (baselines && typeof baselines === 'object') {
-                            merged = sheetData.map(d => {
-                                const yb = baselines[d.year];
-                                const ub = yb && yb[d.unit];
-                                if (!ub) return d;
-                                return {
-                                    ...d,
-                                    electricity: { ...d.electricity, standard: Number(ub.elec) || Number(d.electricity?.standard) || 0 },
-                                    water: { ...d.water, standard: Number(ub.water) || Number(d.water?.standard) || 0 }
-                                };
-                            });
-                        }
-                    } catch (e) { console.warn('โหลด Baseline ไม่สำเร็จ:', e); }
+                    const cloudBaselines = bundle?.baselines && typeof bundle.baselines === 'object' ? bundle.baselines : {};
+                    setBaselines(cloudBaselines); localStorage.setItem('energy_baselines', JSON.stringify(cloudBaselines));
+                    merged = sheetData.map(d => {
+                        const yb = cloudBaselines[d.year];
+                        const ub = yb && yb[d.unit];
+                        if (!ub) return d;
+                        return {
+                            ...d,
+                            electricity: { ...d.electricity, standard: Number(ub.elec) || Number(d.electricity?.standard) || 0 },
+                            water: { ...d.water, standard: Number(ub.water) || Number(d.water?.standard) || 0 }
+                        };
+                    });
                     setData(merged);
                     const now = new Date();
                     setLastSyncAt(now);
@@ -2703,63 +2767,30 @@
                 };
             }, [currentUser]);
 
-            const initDefaultPasswords = async () => {
-                const storedAdmins = localStorage.getItem('energy_admins');
-                const storedExecs = localStorage.getItem('energy_execs');
-                const storedUnits = localStorage.getItem('energy_units');
-                
-                if (storedAdmins) setAdminPasswords(JSON.parse(storedAdmins));
-                else {
-                    const defaultAdmin = await hashPassword('admin');
-                    setAdminPasswords({ 'admin': defaultAdmin });
-                }
-                
-                if (storedExecs) setExecPasswords(JSON.parse(storedExecs));
-                else {
-                    const defaultExec = await hashPassword('boss');
-                    setExecPasswords({ 'boss': defaultExec });
-                }
-                
-                if (storedUnits) { const normalizedUnits = normalizePasswordMap(JSON.parse(storedUnits)); setPasswords(normalizedUnits); setHierarchy(prev => mergeHierarchyWithUnits(prev, Object.keys(normalizedUnits))); }
-                else {
-                    const defaultUser = await hashPassword('1234');
-                    const initialUnits = {};
-                    hierarchy.leaves.forEach(u => initialUnits[u] = defaultUser);
-                    setPasswords(initialUnits);
-                }
-            };
-
             useEffect(() => {
-                initDefaultPasswords();
-                const loadEverything = async () => {
-                    try {
-                        await Promise.all([
-                            refreshDatabase({ allowCacheFallback: true, silent: true }),
-                            loadCloudSettings({ showState: true })
-                        ]);
-                    } catch (error) {
-                        console.error(error);
-                        // Settings ใช้ cache ได้เพื่อให้เปิดหน้าได้ แต่จะแสดงสถานะผิดพลาดชัดเจน
-                        try {
-                            const cachedHierarchy = JSON.parse(localStorage.getItem('energy_hierarchy') || 'null');
-                            const cachedBaselines = JSON.parse(localStorage.getItem('energy_baselines') || '{}');
-                            const cachedLogs = JSON.parse(localStorage.getItem('energy_logs') || '[]');
-                            if (cachedHierarchy) setHierarchy(buildHierarchy(cachedHierarchy));
-                            setBaselines(cachedBaselines); setLogs(cachedLogs);
-                        } catch (_) {}
-                    } finally {
-                        setIsLoading(false);
-                    }
-                };
-                loadEverything();
+                // โหลดเฉพาะข้อมูลที่จำเป็นต่อการล็อกอินหนึ่งคำขอ ส่วนข้อมูลรายงานรอหลังล็อกอิน
+                loadBootstrap().catch(error => console.warn('Bootstrap ใช้ cache แทน:', error));
             }, []);
 
-            const addLog = (action, details) => {
+            useEffect(() => {
+                if (!currentUser) return;
+                refreshDatabase({ allowCacheFallback: true, silent: false }).catch(error => console.warn('โหลดข้อมูลรายงานเบื้องหลังไม่สำเร็จ:', error));
+            }, [currentUser]);
+
+            useEffect(() => {
+                const isSettingsArea = activeTab.startsWith('settings_') || activeTab === 'audit';
+                if (!currentUser || currentUser.role !== 'admin' || !isSettingsArea || settingsLoadStarted.current) return;
+                settingsLoadStarted.current = true;
+                loadCloudSettings({ showState: true }).catch(error => console.warn('โหลด Settings แบบละเอียดไม่สำเร็จ:', error));
+            }, [activeTab, currentUser]);
+
+            const addLog = (action, details, actorOverride = null) => {
+                const actor = actorOverride || currentUser;
                 const newLog = {
                     id: Date.now(),
                     timestamp: new Date().toLocaleString('th-TH'),
-                    user: currentUser ? currentUser.unit : 'System',
-                    role: currentUser ? currentUser.role : 'System',
+                    user: actor ? actor.unit : 'System',
+                    role: actor ? actor.role : 'System',
                     action,
                     details
                 };
@@ -2789,7 +2820,7 @@
                     setCurrentUser({ role, unit: username });
                     if (role === 'user') setSelectedDashboardUnit(username);
                     else setSelectedDashboardUnit('overall');
-                    addLog('เข้าสู่ระบบ', `ลงชื่อเข้าใช้สำเร็จ`);
+                    addLog('เข้าสู่ระบบ', `ลงชื่อเข้าใช้สำเร็จ`, { role, unit: username });
                     return true;
                 }
                 return false;
@@ -2819,24 +2850,31 @@
                         body: JSON.stringify(newRecord)
                     });
 
-                    let confirmedData = null;
+                    let confirmedRecord = null;
                     for (let attempt = 0; attempt < 6; attempt++) {
                         await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 1200 : 1800));
                         try {
-                            const latest = await refreshDatabase({ allowCacheFallback: false, silent: true });
-                            const found = latest && latest.some(d =>
-                                d.unit === payload.unit && d.month === payload.month && d.year === payload.year &&
-                                Number(d.electricity?.actual || 0) === Number(payload.electricity?.actual || 0) &&
-                                Number(d.water?.actual || 0) === Number(payload.water?.actual || 0)
-                            );
-                            if (found) { confirmedData = latest; break; }
+                            let latest;
+                            try {
+                                latest = unwrapApi(await jsonpRequest({ action: 'getRecord', unit: payload.unit, month: payload.month, year: payload.year }, 60000));
+                            } catch (recordError) {
+                                const allRows = unwrapApi(await jsonpRequest({ action: 'getData' }, 90000));
+                                latest = Array.isArray(allRows) ? allRows.find(d => d.unit === payload.unit && d.month === payload.month && d.year === payload.year) : null;
+                            }
+                            const matches = latest && Number(latest.electricity?.actual || 0) === Number(payload.electricity?.actual || 0) && Number(latest.water?.actual || 0) === Number(payload.water?.actual || 0);
+                            if (matches) { confirmedRecord = latest; break; }
                         } catch (_) {}
                     }
-                    if (!confirmedData) {
+                    if (!confirmedRecord) {
                         setDatabaseStatus('error');
                         throw new Error('ส่งข้อมูลแล้ว แต่ยังตรวจไม่พบข้อมูลใน Google Sheets กรุณาตรวจสอบ Apps Script');
                     }
+                    const nextData = data.filter(d => !(d.unit === payload.unit && d.month === payload.month && d.year === payload.year)).concat([confirmedRecord]);
+                    setData(nextData); localStorage.setItem('energy_data', JSON.stringify(nextData));
+                    const now = new Date(); setLastSyncAt(now); localStorage.setItem('energy_last_sync', now.toISOString());
                     setDatabaseStatus('online');
+                    // อัปเดตชุดข้อมูลทั้งหมดภายหลัง โดยไม่หน่วงข้อความสำเร็จของผู้ใช้
+                    refreshDatabase({ allowCacheFallback: true, silent: true }).catch(() => {});
                     return true;
                 } finally {
                     setIsSyncing(false);
@@ -2863,7 +2901,7 @@
                     );
                     setHierarchy(newHierarchy); setPasswords(updatedPasswords);
                     localStorage.setItem('energy_hierarchy', JSON.stringify(newHierarchy.dict)); localStorage.setItem('energy_units', JSON.stringify(updatedPasswords));
-                    await loadCloudSettings({ showState: false });
+                    setCloudSettings(prev => ({ ...(prev || {}), hierarchy: newHierarchy.dict, access: { ...(prev?.access || {}), units: updatedPasswords } }));
                     showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบโครงสร้างและสิทธิ์หน่วยงานล่าสุดใน Google Sheets แล้ว หน่วยที่ลบจะไม่ถูกดึงกลับมาอีก', type: 'alert' });
                 } catch (error) {
                     setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
@@ -2883,7 +2921,7 @@
                     const nextBaselines = { ...baselines, [year]: verified }; setBaselines(nextBaselines); localStorage.setItem('energy_baselines', JSON.stringify(nextBaselines));
                     const newData = data.map(d => d.year === year && verified[d.unit] ? ({ ...d, electricity: { ...d.electricity, standard: verified[d.unit].elec }, water: { ...d.water, standard: verified[d.unit].water } }) : d);
                     setData(newData); localStorage.setItem('energy_data', JSON.stringify(newData));
-                    await loadCloudSettings({ showState: false });
+                    setCloudSettings(prev => ({ ...(prev || {}), baselines: nextBaselines }));
                     showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบค่า Baseline ล่าสุดใน Google Sheets แล้ว', type: 'alert' });
                 } catch (error) {
                     setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
@@ -2904,7 +2942,8 @@
                     if (type === 'execPasswords') { setExecPasswords(value); localStorage.setItem('energy_execs', JSON.stringify(value)); }
                     if (type === 'passwords') { setPasswords(value); localStorage.setItem('energy_units', JSON.stringify(value)); }
                     if (type === 'announcement') { setAnnouncement(value); localStorage.setItem('energy_announcement', value); }
-                    await loadCloudSettings({ showState: false }); addLog('ตั้งค่าระบบ', `อัปเดตข้อมูล ${typeName}`);
+                    setCloudSettings(prev => ({ ...(prev || {}), access: { ...(prev?.access || {}), [key]: value } }));
+                    addLog('ตั้งค่าระบบ', `อัปเดตข้อมูล ${typeName}`);
                     showModal({ title: 'บันทึกสำเร็จ', message: `ตรวจพบข้อมูล ${typeName} ล่าสุดใน Google Sheets แล้ว`, type: 'alert' });
                 } catch (error) {
                     setSettingsSync({ status: 'error', message: error.message, at: settingsSync.at });
@@ -2928,16 +2967,13 @@
             } : null;
             const settingsComparison = cloudSnapshot ? (stableJson(settingsSnapshot()) === stableJson(cloudSnapshot) ? 'match' : 'different') : 'unknown';
             const reloadSettingsFromSheet = async () => {
-                try { await loadCloudSettings({ showState: true }); await refreshDatabase({ allowCacheFallback: false, silent: true }); }
+                try { await loadCloudSettings({ showState: true }); }
                 catch (error) { showModal({ title: 'โหลดจากชีตไม่สำเร็จ', message: error.message, type: 'error' }); }
             };
 
-            if (isLoading) {
-                return <div className="flex h-screen items-center justify-center bg-slate-50 flex-col gap-4"><SmallLoader className="w-10 h-10 text-emerald-500" /><p className="text-sm font-bold text-slate-600">กำลังโหลดข้อมูลล่าสุดจาก Google Sheets...</p></div>;
-            }
-
             if (!currentUser) {
-                return <LoginScreen onLogin={handleLogin} hierarchy={hierarchy} globalAnnouncement={announcement} />;
+                const hasCredentials = Object.keys(adminPasswords).length + Object.keys(execPasswords).length + Object.keys(passwords).length > 0;
+                return <LoginScreen onLogin={handleLogin} hierarchy={hierarchy} globalAnnouncement={announcement} authStatus={authStatus} authMessage={authMessage} hasCredentials={hasCredentials} onRetry={() => loadBootstrap().catch(() => {})} />;
             }
 
             return (
