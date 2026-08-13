@@ -2511,7 +2511,7 @@
             };
             const closeModal = () => setModalState({ isOpen: false });
 
-            const jsonpRequest = (params = {}, timeoutMs = 20000) => new Promise((resolve, reject) => {
+            const jsonpRequest = (params = {}, timeoutMs = 12000) => new Promise((resolve, reject) => {
                 const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
                 const script = document.createElement('script');
                 const query = new URLSearchParams({ ...params, callback: cbName, _: Date.now().toString() });
@@ -2519,7 +2519,7 @@
                     if (window[cbName]) delete window[cbName];
                     if (script.parentNode) script.parentNode.removeChild(script);
                 };
-                const timer = setTimeout(() => { cleanup(); reject(new Error('เชื่อมต่อฐานข้อมูลหมดเวลา')); }, timeoutMs);
+                const timer = setTimeout(() => { cleanup(); reject(new Error(`Apps Script ไม่ตอบภายใน ${Math.round(timeoutMs / 1000)} วินาที (${params.action || 'request'}) กรุณาตรวจ Deployment /exec`)); }, timeoutMs);
                 window[cbName] = (result) => { clearTimeout(timer); cleanup(); resolve(result); };
                 script.onerror = () => { clearTimeout(timer); cleanup(); reject(new Error('โหลดข้อมูลจากฐานข้อมูลไม่สำเร็จ')); };
                 script.src = GOOGLE_SHEETS_URL + '?' + query.toString();
@@ -2570,7 +2570,7 @@
                     setSettingsSync({ status: 'success', message: 'โหลดค่าล่าสุดจาก Google Sheets เรียบร้อย', at });
                     return cloud;
                 } catch (error) {
-                    setSettingsSync({ status: 'error', message: error.message || 'โหลด Settings ไม่สำเร็จ', at: settingsSync.at });
+                    setSettingsSync({ status: 'error', message: `${error.message || 'โหลด Settings ไม่สำเร็จ'} — กำลังแสดงข้อมูลสำรองในเครื่อง`, at: settingsSync.at });
                     throw error;
                 }
             };
