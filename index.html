@@ -497,9 +497,9 @@
                                 </div>
                             </div>
 
-                            <button type="submit" disabled={isAuthenticating || !hasCredentials} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all duration-300 mt-6 shadow-lg text-sm flex justify-center items-center ${isAuthenticating || !hasCredentials ? 'bg-slate-400 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 hover:shadow-emerald-500/25 hover:-translate-y-0.5'}`}>
-                                {(isAuthenticating || !hasCredentials) ? <SmallLoader className="w-5 h-5 mr-2 text-white" /> : null}
-                                {isAuthenticating ? 'กำลังตรวจสอบสิทธิ์...' : !hasCredentials ? 'กำลังโหลดข้อมูลสิทธิ์...' : 'ลงชื่อเข้าใช้ระบบ'}
+                            <button type="submit" disabled={isAuthenticating || authStatus === 'loading'} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all duration-300 mt-6 shadow-lg text-sm flex justify-center items-center ${isAuthenticating || authStatus === 'loading' ? 'bg-slate-400 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 hover:shadow-emerald-500/25 hover:-translate-y-0.5'}`}>
+                                {(isAuthenticating || authStatus === 'loading') ? <SmallLoader className="w-5 h-5 mr-2 text-white" /> : null}
+                                {isAuthenticating ? 'กำลังตรวจสอบสิทธิ์กับเซิร์ฟเวอร์...' : authStatus === 'loading' ? 'กำลังเชื่อมต่อ...' : 'ลงชื่อเข้าใช้ระบบ'}
                             </button>
                         </form>
                     </div>
@@ -518,7 +518,7 @@
                 const prevMonthIndex = MONTHS.indexOf(entryMonth) - 1;
                 let pMonth = prevMonthIndex >= 0 ? MONTHS[prevMonthIndex] : MONTHS[11];
                 let pYear = prevMonthIndex >= 0 ? selectedYear : (parseInt(selectedYear) - 1).toString();
-                return data.find(d => d.unit === selectedUnit && d.month === pMonth && d.year === pYear && d.status === 'submitted') || {};
+                return data.find(d => d.unit === selectedUnit && d.month === pMonth && d.year === pYear && ['submitted','pending_review','verified','approved','locked'].includes(d.status)) || {};
             }, [data, entryMonth, selectedYear, selectedUnit]);
 
             const [formData, setFormData] = useState({
@@ -532,7 +532,7 @@
 
             useEffect(() => {
                 const existing = data.find(d => d.unit === selectedUnit && d.month === entryMonth && d.year === selectedYear);
-                if (existing && existing.status === 'submitted') {
+                if (existing) {
                     setFormData({
                         elec_std: existing.electricity?.standard || '', elec_act: existing.electricity?.actual || '', elec_cost: existing.electricity?.cost || '',
                         water_std: existing.water?.standard || '', water_act: existing.water?.actual || '', water_cost: existing.water?.cost || '',
@@ -988,6 +988,31 @@
                     </div>
                 </div>
             );
+        }
+
+        function CommandCenterSummary({ data, month, year, hierarchy }) {
+            const targetMonth = month === 'สรุปรายปี' ? MONTHS[new Date().getMonth()] : month;
+            const rows = data.filter(d => d.year === year && d.month === targetMonth);
+            const total = hierarchy.leaves.length || 0, pending = rows.filter(r => r.workflowStatus === 'pending_review').length;
+            const anomalies = rows.filter(r => ['critical','warning'].includes(r.anomalyLevel)).length;
+            const approved = rows.filter(r => r.workflowStatus === 'approved').length;
+            return <div className="mb-5 bg-gradient-to-r from-slate-900 to-slate-700 text-white rounded-2xl p-5 shadow-lg no-print"><div className="flex flex-col md:flex-row md:items-center justify-between gap-4"><div><p className="text-[10px] uppercase tracking-[.25em] text-emerald-300 font-bold">Energy Command Center</p><h3 className="text-xl font-bold mt-1">สถานการณ์ประจำเดือน {targetMonth} {year}</h3></div><div className="grid grid-cols-4 gap-5 text-center"><div><p className="text-2xl font-bold">{total ? Math.round(rows.length/total*100) : 0}%</p><p className="text-[10px] text-slate-300">การส่งรายงาน</p></div><div><p className="text-2xl font-bold text-amber-300">{pending}</p><p className="text-[10px] text-slate-300">รอตรวจ</p></div><div><p className="text-2xl font-bold text-rose-300">{anomalies}</p><p className="text-[10px] text-slate-300">ผิดปกติ</p></div><div><p className="text-2xl font-bold text-emerald-300">{approved}</p><p className="text-[10px] text-slate-300">อนุมัติ</p></div></div></div></div>;
+        }
+
+        function WorkflowCenter({ data, month, year, onReview, onLock, isLocked }) {
+            const rows = data.filter(d => d.year === year && d.month === month);
+            const counts = rows.reduce((o, r) => { const s = r.workflowStatus || 'pending_review'; o[s] = (o[s] || 0) + 1; return o; }, {});
+            const labels = { draft:'ร่าง', pending_review:'รอตรวจสอบ', needs_revision:'ต้องแก้ไข', verified:'ตรวจแล้ว', approved:'อนุมัติ', locked:'ล็อก' };
+            const tones = { critical:'bg-rose-100 text-rose-700', warning:'bg-orange-100 text-orange-700', watch:'bg-amber-100 text-amber-700', normal:'bg-emerald-100 text-emerald-700' };
+            return <div className="space-y-5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[['รายงานแล้ว',rows.length,'text-emerald-600'],['รอตรวจสอบ',counts.pending_review||0,'text-amber-600'],['ต้องแก้ไข',counts.needs_revision||0,'text-rose-600'],['อนุมัติแล้ว',counts.approved||0,'text-cyan-600']].map(x => <div key={x[0]} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm"><p className="text-xs text-slate-500 font-bold">{x[0]}</p><p className={`text-3xl font-bold mt-1 ${x[2]}`}>{x[1]}</p></div>)}
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                    <div className="p-5 bg-slate-800 text-white flex items-center justify-between"><div><h3 className="font-bold">ศูนย์ตรวจสอบและอนุมัติ</h3><p className="text-xs text-slate-300 mt-1">{month} {year}</p></div><button onClick={() => onLock(!isLocked)} className={`px-4 py-2 rounded-lg text-xs font-bold ${isLocked ? 'bg-amber-500' : 'bg-rose-500'}`}>{isLocked ? 'ปลดล็อกงวด' : 'ล็อกงวด'}</button></div>
+                    <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50 text-slate-500"><tr><th className="p-3 text-left">หน่วย</th><th className="p-3">สถานะ</th><th className="p-3">คุณภาพ</th><th className="p-3">ความผิดปกติ</th><th className="p-3">ดำเนินการ</th></tr></thead><tbody className="divide-y divide-slate-100">{rows.map(r => <tr key={r.unit}><td className="p-3 font-bold">{r.unit}</td><td className="p-3 text-center">{labels[r.workflowStatus] || r.workflowStatus}</td><td className="p-3 text-center font-bold">{r.qualityScore || 0}/100</td><td className="p-3 text-center"><span className={`px-2 py-1 rounded-full text-xs font-bold ${tones[r.anomalyLevel] || tones.normal}`}>{r.anomalyLevel || 'normal'}</span>{r.anomalyFlags?.length ? <div className="text-[10px] text-slate-500 mt-1">{r.anomalyFlags.join(', ')}</div> : null}</td><td className="p-3 text-center space-x-1"><button disabled={isLocked} onClick={() => onReview(r,'approve')} className="px-2 py-1 bg-emerald-600 text-white rounded disabled:opacity-40">อนุมัติ</button><button disabled={isLocked} onClick={() => onReview(r,'return')} className="px-2 py-1 bg-rose-600 text-white rounded disabled:opacity-40">ส่งแก้</button></td></tr>)}</tbody></table></div>
+                </div>
+            </div>;
         }
 
         function AuditLogs({ logs }) {
@@ -2505,6 +2530,7 @@
             const initialCache = useMemo(getInitialAppCache, []);
             // Core States
             const [currentUser, setCurrentUser] = useState(null);
+            const [sessionToken, setSessionToken] = useState(() => sessionStorage.getItem('energy_session_token') || '');
             const [activeTab, setActiveTab] = useState('dashboard');
             const [globalMonth, setGlobalMonth] = useState('ม.ค.');
             const [selectedYear, setSelectedYear] = useState('2567');
@@ -2521,6 +2547,7 @@
             const [execPasswords, setExecPasswords] = useState(initialCache.execs);
             const [passwords, setPasswords] = useState(initialCache.units);
             const [baselines, setBaselines] = useState(initialCache.baselines);
+            const [periodLocks, setPeriodLocks] = useState([]);
             const [cloudSettings, setCloudSettings] = useState(null);
             const [settingsSync, setSettingsSync] = useState({ status: initialCache.hasCredentials ? 'success' : 'loading', message: initialCache.hasCredentials ? 'แสดงค่าล่าสุดในเครื่อง กดโหลดใหม่เมื่อต้องการตรวจสอบ' : 'กำลังโหลดการตั้งค่าจากชีต', at: initialCache.authLastSync });
             const [authStatus, setAuthStatus] = useState(initialCache.hasCredentials ? 'cached' : 'loading');
@@ -2541,7 +2568,7 @@
             const jsonpFallback = (params = {}, timeoutMs = 60000) => new Promise((resolve, reject) => {
                 const cbName = 'jsonp_' + Date.now() + '_' + Math.random().toString(36).slice(2);
                 const script = document.createElement('script');
-                const query = new URLSearchParams({ ...params, callback: cbName, _: Date.now().toString() });
+                const query = new URLSearchParams({ ...params, ...(sessionToken ? { token: sessionToken } : {}), callback: cbName, _: Date.now().toString() });
                 const cleanup = () => {
                     if (window[cbName]) delete window[cbName];
                     if (script.parentNode) script.parentNode.removeChild(script);
@@ -2556,7 +2583,7 @@
             const jsonpRequest = async (params = {}, timeoutMs = 60000) => {
                 // หน้าเว็บเปิดจากไฟล์โดยตรง: ใช้ JSONP ทันทีเพื่อไม่เสียเวลารอ fetch/CORS 30 วินาที
                 if (window.location.protocol === 'file:') return jsonpFallback(params, timeoutMs);
-                const query = new URLSearchParams({ ...params, _: Date.now().toString() });
+                const query = new URLSearchParams({ ...params, ...(sessionToken ? { token: sessionToken } : {}), _: Date.now().toString() });
                 const controller = new AbortController();
                 const fetchTimeout = setTimeout(() => controller.abort(), Math.min(timeoutMs, 30000));
                 try {
@@ -2583,22 +2610,25 @@
                 const sortValue = v => Array.isArray(v) ? v.map(sortValue) : (v && typeof v === 'object' ? Object.keys(v).sort().reduce((o, k) => { o[k] = sortValue(v[k]); return o; }, {}) : v);
                 return JSON.stringify(sortValue(value));
             };
-            const applyCloudBootstrap = ({ access, hierarchy: cloudHierarchy }) => {
+            const applyCloudBootstrap = ({ access, users, announcement: cloudAnnouncement, hierarchy: cloudHierarchy }) => {
+                // v4 ส่งเฉพาะรายชื่อผู้ใช้ ไม่ส่ง password hash ลง browser
                 const safeAccess = access && typeof access === 'object' ? access : {};
-                const admins = safeAccess.admins && typeof safeAccess.admins === 'object' ? safeAccess.admins : {};
-                const execs = safeAccess.execs && typeof safeAccess.execs === 'object' ? safeAccess.execs : {};
-                const units = normalizePasswordMap(safeAccess.units && typeof safeAccess.units === 'object' ? safeAccess.units : {});
+                const safeUsers = users && typeof users === 'object' ? users : {};
+                const admins = Object.fromEntries((safeUsers.admin || Object.keys(safeAccess.admins || {})).map(u => [u, 'SERVER_AUTH']));
+                const execs = Object.fromEntries((safeUsers.executive || Object.keys(safeAccess.execs || {})).map(u => [u, 'SERVER_AUTH']));
+                const units = normalizePasswordMap(Object.fromEntries((safeUsers.user || Object.keys(safeAccess.units || {})).map(u => [u, 'SERVER_AUTH'])));
                 const safeHierarchy = buildHierarchy(cloudHierarchy && typeof cloudHierarchy === 'object' && !Array.isArray(cloudHierarchy) && Object.keys(cloudHierarchy).length ? cloudHierarchy : DEFAULT_HIERARCHY);
                 setAdminPasswords(admins); setExecPasswords(execs); setPasswords(units);
-                setAnnouncement(typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
+                const latestAnnouncement = typeof cloudAnnouncement === 'string' ? cloudAnnouncement : (typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
+                setAnnouncement(latestAnnouncement);
                 // hierarchy เป็นแหล่งข้อมูลหลัก ห้ามดึงหน่วยที่ถูกลบกลับมาจาก access_units
                 setHierarchy(safeHierarchy);
-                localStorage.setItem('energy_admins', JSON.stringify(admins));
-                localStorage.setItem('energy_execs', JSON.stringify(execs));
-                localStorage.setItem('energy_units', JSON.stringify(units));
-                localStorage.setItem('energy_announcement', typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '');
+                localStorage.removeItem('energy_admins');
+                localStorage.removeItem('energy_execs');
+                localStorage.removeItem('energy_units');
+                localStorage.setItem('energy_announcement', latestAnnouncement);
                 localStorage.setItem('energy_hierarchy', JSON.stringify(safeHierarchy.dict));
-                return { access: { admins, execs, units, announcement: typeof safeAccess.announcement === 'string' ? safeAccess.announcement : '' }, hierarchy: safeHierarchy.dict };
+                return { access: { admins, execs, units, announcement: latestAnnouncement }, hierarchy: safeHierarchy.dict };
             };
 
             const loadBootstrap = async () => {
@@ -2613,9 +2643,9 @@
                         const [accessRaw, hierarchyRaw] = await Promise.all([jsonpRequest({ action: 'getAccess' }, 90000), jsonpRequest({ action: 'getHierarchy' }, 90000)]);
                         raw = { access: unwrapApi(accessRaw), hierarchy: unwrapApi(hierarchyRaw), apiVersion: 'legacy' };
                     }
-                    if (!raw || !raw.access || !raw.hierarchy) throw new Error('Bootstrap response ไม่ครบถ้วน');
+                    if (!raw || !raw.hierarchy || (!raw.users && !raw.access)) throw new Error('Bootstrap response ไม่ครบถ้วน');
                     applyCloudBootstrap(raw);
-                    setCloudSettings(prev => ({ ...(prev || {}), access: raw.access, hierarchy: raw.hierarchy }));
+                    setCloudSettings(prev => ({ ...(prev || {}), access: raw.access || {}, hierarchy: raw.hierarchy }));
                     const now = new Date();
                     localStorage.setItem('energy_auth_last_sync', now.toISOString());
                     setAuthStatus('online'); setAuthMessage(`ซิงก์ข้อมูลสิทธิ์ล่าสุด ${now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}`);
@@ -2660,6 +2690,7 @@
             };
 
             const postAndVerify = async (payload, readBack, matches, label) => {
+                payload = { ...payload, token: sessionToken };
                 setSettingsSync({ status: 'saving', message: `กำลังบันทึก ${label}`, at: settingsSync.at });
                 let responseReadable = false;
                 try {
@@ -2695,15 +2726,17 @@
                     try {
                         bundle = unwrapApi(await jsonpRequest({ action: 'getDashboardBundle' }, 90000));
                     } catch (bundleError) {
-                        const [dataRaw, baselineRaw] = await Promise.all([jsonpRequest({ action: 'getData' }, 90000), jsonpRequest({ action: 'getAllBaselines' }, 60000)]);
-                        bundle = { data: unwrapApi(dataRaw), baselines: unwrapApi(baselineRaw) };
+                        const [dataRaw, baselineRaw, locksRaw] = await Promise.all([jsonpRequest({ action: 'getData' }, 90000), jsonpRequest({ action: 'getAllBaselines' }, 60000), jsonpRequest({ action: 'getLocks' }, 60000)]);
+                        bundle = { data: unwrapApi(dataRaw), baselines: unwrapApi(baselineRaw), locks: unwrapApi(locksRaw) };
                     }
                     const sheetData = bundle?.data;
                     if (!Array.isArray(sheetData)) throw new Error('รูปแบบข้อมูลจาก Google Sheets ไม่ถูกต้อง');
-                    let merged = sheetData;
+                    let merged = sheetData.map(d => ({ ...d, workflowStatus: d.status || 'pending_review', status: 'submitted' }));
                     const cloudBaselines = bundle?.baselines && typeof bundle.baselines === 'object' ? bundle.baselines : {};
+                    setPeriodLocks(Array.isArray(bundle?.locks) ? bundle.locks : []);
                     setBaselines(cloudBaselines); localStorage.setItem('energy_baselines', JSON.stringify(cloudBaselines));
-                    merged = sheetData.map(d => {
+                    merged = sheetData.map(source => {
+                        const d = { ...source, workflowStatus: source.status || 'pending_review', status: 'submitted' };
                         const yb = cloudBaselines[d.year];
                         const ub = yb && yb[d.unit];
                         if (!ub) return d;
@@ -2794,30 +2827,26 @@
                 const updatedLogs = [newLog, ...logs];
                 setLogs(updatedLogs);
                 localStorage.setItem('energy_logs', JSON.stringify(updatedLogs));
-                // บันทึกประวัติการใช้งานลงแท็บ AuditLogs ในชีตด้วย (รวมศูนย์ทุกเครื่อง)
-                if (typeof GOOGLE_SHEETS_URL !== 'undefined' && GOOGLE_SHEETS_URL && GOOGLE_SHEETS_URL.trim() !== '') {
-                    fetch(GOOGLE_SHEETS_URL, {
-                        method: 'POST', mode: 'no-cors',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        body: JSON.stringify({ type: 'log_add', log: newLog })
-                    }).catch(err => console.error('บันทึก log ลงชีตล้มเหลว:', err));
-                }
+                // การเปลี่ยนแปลงจริงถูกบันทึกแบบ before/after ที่ backend แล้ว
             };
 
             const handleLogin = async (role, username, password) => {
                 username = role === 'user' ? normalizeUnitName(username) : String(username || '').trim();
-                const hashed = await hashPassword(password);
-                let isValid = false;
-                
-                if (role === 'admin' && adminPasswords[username] === hashed) isValid = true;
-                if (role === 'executive' && execPasswords[username] === hashed) isValid = true;
-                if (role === 'user' && passwords[username] === hashed) isValid = true;
-
-                if (isValid) {
-                    setCurrentUser({ role, unit: username });
+                const requestId = (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '_' + Math.random().toString(36).slice(2));
+                await fetch(GOOGLE_SHEETS_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({type:'login',role,username,password,requestId}) });
+                let result = null, lastError = null;
+                for (let attempt = 0; attempt < 8 && !result; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 700 : 900));
+                    try { result = unwrapApi(await jsonpRequest({ action:'loginResult', requestId }, 15000)); }
+                    catch (error) { lastError = error; if (/รหัสผ่าน|ชื่อผู้ใช้/.test(error.message || '')) throw error; }
+                }
+                if (!result) throw lastError || new Error('เซิร์ฟเวอร์ไม่ตอบกลับการเข้าสู่ระบบ');
+                if (result && result.token) {
+                    sessionStorage.setItem('energy_session_token', result.token);
+                    setSessionToken(result.token);
+                    setCurrentUser({ role: result.role, unit: result.user });
                     if (role === 'user') setSelectedDashboardUnit(username);
                     else setSelectedDashboardUnit('overall');
-                    addLog('เข้าสู่ระบบ', `ลงชื่อเข้าใช้สำเร็จ`, { role, unit: username });
                     return true;
                 }
                 return false;
@@ -2825,6 +2854,9 @@
 
             const handleLogout = () => {
                 addLog('ออกจากระบบ', `ออกจากระบบ`);
+                if (sessionToken) fetch(GOOGLE_SHEETS_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({type:'logout',token:sessionToken}) }).catch(() => {});
+                sessionStorage.removeItem('energy_session_token');
+                setSessionToken('');
                 setCurrentUser(null);
             };
 
@@ -2832,7 +2864,7 @@
             const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyK0TX1GGB8ronBcpaAIU1vJYNhlSWqiiRYAF7rNZdFpu68-5gnCFT0VFZ56vNlIjKq/exec"; 
 
             const handleSaveData = async (payload) => {
-                const newRecord = { ...payload, status: 'submitted', timestamp: new Date().toISOString() };
+                const newRecord = { ...payload, type: 'energy_record', status: 'pending_review', token: sessionToken, timestamp: new Date().toISOString() };
                 if (!GOOGLE_SHEETS_URL || GOOGLE_SHEETS_URL.trim() === '') {
                     throw new Error('ยังไม่ได้ตั้งค่า Google Apps Script URL');
                 }
@@ -2866,6 +2898,7 @@
                         setDatabaseStatus('error');
                         throw new Error('ส่งข้อมูลแล้ว แต่ยังตรวจไม่พบข้อมูลใน Google Sheets กรุณาตรวจสอบ Apps Script');
                     }
+                    confirmedRecord = { ...confirmedRecord, workflowStatus: confirmedRecord.status || 'pending_review', status: 'submitted' };
                     const nextData = data.filter(d => !(d.unit === payload.unit && d.month === payload.month && d.year === payload.year)).concat([confirmedRecord]);
                     setData(nextData); localStorage.setItem('energy_data', JSON.stringify(nextData));
                     const now = new Date(); setLastSyncAt(now); localStorage.setItem('energy_last_sync', now.toISOString());
@@ -2876,6 +2909,33 @@
                 } finally {
                     setIsSyncing(false);
                 }
+            };
+
+            const securePost = async (payload) => {
+                await fetch(GOOGLE_SHEETS_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({ ...payload, token:sessionToken }) });
+                return true;
+            };
+
+            const handleReview = async (record, action) => {
+                const note = action === 'return' ? (window.prompt('ระบุเหตุผลที่ส่งกลับแก้ไข') || '') : '';
+                if (action === 'return' && !note) return;
+                try {
+                    await securePost({ type:'review_record', action, year:record.year, month:record.month, unit:record.unit, note });
+                    await new Promise(resolve => setTimeout(resolve, 900));
+                    const latestRows = await refreshDatabase({allowCacheFallback:false,silent:true});
+                    const expected = action === 'approve' ? 'approved' : 'needs_revision';
+                    const latest = latestRows?.find(x => x.year===record.year && x.month===record.month && x.unit===record.unit);
+                    if (!latest || latest.workflowStatus !== expected) throw new Error('ส่งคำสั่งแล้ว แต่สถานะใน Google Sheets ยังไม่เปลี่ยน');
+                    showModal({title:'ดำเนินการสำเร็จ',message:action==='approve'?'อนุมัติรายงานแล้ว':'ส่งรายงานกลับให้แก้ไขแล้ว',type:'alert'});
+                } catch (error) { showModal({title:'ดำเนินการไม่สำเร็จ',message:error.message,type:'error'}); }
+            };
+
+            const handlePeriodLock = async (locked) => {
+                const month = globalMonth === 'สรุปรายปี' ? MONTHS[new Date().getMonth()] : globalMonth;
+                const reason = window.prompt(locked ? 'เหตุผลในการล็อกงวด' : 'เหตุผลในการปลดล็อกงวด') || '';
+                if (!reason) return;
+                try { await securePost({type:'period_lock',year:selectedYear,month,locked,reason}); await new Promise(resolve => setTimeout(resolve,900)); await refreshDatabase({allowCacheFallback:false,silent:true}); }
+                catch(error){ showModal({title:'เปลี่ยนสถานะงวดไม่สำเร็จ',message:error.message,type:'error'}); }
             };
 
             const handleUpdateHierarchy = async (newDict) => {
@@ -2891,13 +2951,9 @@
                     const updatedPasswords = Object.fromEntries(Object.entries(passwords).filter(([unit]) => allowedUnits.has(unit)));
                     const defaultPwd = await hashPassword('1234');
                     newHierarchy.leaves.forEach(u => { if (!updatedPasswords[u]) updatedPasswords[u] = defaultPwd; });
-                    await postAndVerify(
-                        { type: 'access_update', units: updatedPasswords },
-                        () => jsonpRequest({ action: 'getAccess' }),
-                        value => stableJson(normalizePasswordMap(value?.units || {})) === stableJson(updatedPasswords), 'สิทธิ์หน่วยงาน'
-                    );
+                    await securePost({ type: 'access_update', units: updatedPasswords });
                     setHierarchy(newHierarchy); setPasswords(updatedPasswords);
-                    localStorage.setItem('energy_hierarchy', JSON.stringify(newHierarchy.dict)); localStorage.setItem('energy_units', JSON.stringify(updatedPasswords));
+                    localStorage.setItem('energy_hierarchy', JSON.stringify(newHierarchy.dict));
                     setCloudSettings(prev => ({ ...(prev || {}), hierarchy: newHierarchy.dict, access: { ...(prev?.access || {}), units: updatedPasswords } }));
                     showModal({ title: 'บันทึกสำเร็จ', message: 'ตรวจพบโครงสร้างและสิทธิ์หน่วยงานล่าสุดใน Google Sheets แล้ว หน่วยที่ลบจะไม่ถูกดึงกลับมาอีก', type: 'alert' });
                 } catch (error) {
@@ -2930,14 +2986,10 @@
                 const keyMap = { adminPasswords: 'admins', execPasswords: 'execs', passwords: 'units', announcement: 'announcement' };
                 const key = keyMap[type];
                 try {
-                    await postAndVerify(
-                        { type: 'access_update', [key]: value },
-                        () => jsonpRequest({ action: 'getAccess' }),
-                        actual => stableJson(actual?.[key] ?? (key === 'announcement' ? '' : {})) === stableJson(value), typeName
-                    );
-                    if (type === 'adminPasswords') { setAdminPasswords(value); localStorage.setItem('energy_admins', JSON.stringify(value)); }
-                    if (type === 'execPasswords') { setExecPasswords(value); localStorage.setItem('energy_execs', JSON.stringify(value)); }
-                    if (type === 'passwords') { setPasswords(value); localStorage.setItem('energy_units', JSON.stringify(value)); }
+                    await securePost({ type: 'access_update', [key]: value });
+                    if (type === 'adminPasswords') setAdminPasswords(value);
+                    if (type === 'execPasswords') setExecPasswords(value);
+                    if (type === 'passwords') setPasswords(value);
                     if (type === 'announcement') { setAnnouncement(value); localStorage.setItem('energy_announcement', value); }
                     setCloudSettings(prev => ({ ...(prev || {}), access: { ...(prev?.access || {}), [key]: value } }));
                     addLog('ตั้งค่าระบบ', `อัปเดตข้อมูล ${typeName}`);
@@ -2952,9 +3004,7 @@
                 localStorage.setItem('energy_data', JSON.stringify(parsedBackup.data));
                 if (parsedBackup.logs) localStorage.setItem('energy_logs', JSON.stringify(parsedBackup.logs));
                 if (parsedBackup.hierarchy && parsedBackup.hierarchy.dict) localStorage.setItem('energy_hierarchy', JSON.stringify(parsedBackup.hierarchy.dict));
-                if (parsedBackup.admins) localStorage.setItem('energy_admins', parsedBackup.admins);
-                if (parsedBackup.execs) localStorage.setItem('energy_execs', parsedBackup.execs);
-                if (parsedBackup.units) localStorage.setItem('energy_units', parsedBackup.units);
+                // v4 ไม่กู้คืน password hash ลง browser; ให้จัดการสิทธิ์ผ่าน backend เท่านั้น
                 if (parsedBackup.announcement !== undefined) localStorage.setItem('energy_announcement', parsedBackup.announcement);
             };
 
@@ -3024,6 +3074,7 @@
                                     <>
                                         <li className="pt-4 pb-2 px-3"><span className="text-xs font-bold text-slate-500 uppercase tracking-wider">สำหรับผู้บริหาร & ส่วนกลาง</span></li>
                                         <li><button onClick={() => {setActiveTab('status'); setIsSidebarOpen(false);}} className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'status' ? 'bg-emerald-500/10 text-emerald-400' : 'hover:bg-slate-800 hover:text-white'}`}><ClipboardList className="w-4 h-4 mr-3"/> ติดตามสถานะการส่ง</button></li>
+                                        {currentUser.role === 'admin' && <li><button onClick={() => {setActiveTab('workflow'); setIsSidebarOpen(false);}} className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'workflow' ? 'bg-emerald-500/10 text-emerald-400' : 'hover:bg-slate-800 hover:text-white'}`}><CheckCircle2 className="w-4 h-4 mr-3"/> ตรวจสอบและอนุมัติ</button></li>}
                                         <li><button onClick={() => {setActiveTab('export'); setIsSidebarOpen(false);}} className={`w-full flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${activeTab === 'export' ? 'bg-emerald-500/10 text-emerald-400' : 'hover:bg-slate-800 hover:text-white'}`}><Download className="w-4 h-4 mr-3"/> สรุปผล / Export</button></li>
                                     </>
                                 )}
@@ -3066,6 +3117,7 @@
                                     {activeTab === 'dashboard' && 'แดชบอร์ดสรุปผลและวิเคราะห์'}
                                     {activeTab === 'entry' && 'บันทึกข้อมูลการใช้พลังงาน'}
                                     {activeTab === 'status' && 'สถานะการส่งรายงาน'}
+                                    {activeTab === 'workflow' && 'ศูนย์ตรวจสอบ อนุมัติ และล็อกงวด'}
                                     {activeTab === 'export' && 'รายงานและการส่งออกข้อมูล'}
                                     {activeTab === 'settings_unit' && 'ตั้งค่าโครงสร้างหน่วยงาน'}
                                     {activeTab === 'settings_std' && 'ตั้งค่าเป้าหมายลดใช้พลังงาน'}
@@ -3138,9 +3190,11 @@
                         <main className="flex-1 overflow-y-auto p-4 md:p-6 custom-scrollbar print:p-0 print:overflow-visible">
                             {(activeTab.startsWith('settings_') || activeTab === 'audit') && <SettingsSectionNav activeTab={activeTab} onChange={setActiveTab} />}
                             {(activeTab.startsWith('settings_') || activeTab === 'audit') && <SettingsSyncPanel status={settingsSync.status} message={settingsSync.message} lastSyncAt={settingsSync.at} comparison={settingsComparison} onReload={reloadSettingsFromSheet} />}
+                            {activeTab === 'dashboard' && currentUser.role !== 'user' && <CommandCenterSummary data={data} month={globalMonth} year={selectedYear} hierarchy={hierarchy} />}
                             {activeTab === 'dashboard' && <Dashboard unit={selectedDashboardUnit} month={globalMonth} year={selectedYear} data={data} activeCategory={activeCategory} hierarchy={hierarchy} currentUser={currentUser} />}
                             {activeTab === 'entry' && <DataEntryForm data={data} onSave={handleSaveData} currentUser={currentUser} globalMonth={globalMonth} selectedYear={selectedYear} hierarchy={hierarchy} onAddLog={addLog} showModal={showModal} />}
                             {activeTab === 'status' && <StatusTracking data={data} month={globalMonth === 'สรุปรายปี' ? MONTHS[new Date().getMonth()] : globalMonth} year={selectedYear} hierarchy={hierarchy} />}
+                            {activeTab === 'workflow' && <WorkflowCenter data={data} month={globalMonth === 'สรุปรายปี' ? MONTHS[new Date().getMonth()] : globalMonth} year={selectedYear} onReview={handleReview} onLock={handlePeriodLock} isLocked={periodLocks.some(x => x.year===selectedYear && x.month===(globalMonth === 'สรุปรายปี' ? MONTHS[new Date().getMonth()] : globalMonth) && x.locked)} />}
                             {activeTab === 'export' && <ReportExport data={data} month={globalMonth} year={selectedYear} hierarchy={hierarchy} currentUser={currentUser} />}
                             {activeTab === 'settings_unit' && <UnitSettings hierarchy={hierarchy} onUpdateHierarchy={handleUpdateHierarchy} onAddLog={addLog} showModal={showModal} syncBusy={settingsSync.status === 'saving' || settingsSync.status === 'loading'} />}
                             {activeTab === 'settings_std' && <StandardSettings data={data} baselines={baselines} year={selectedYear} onUpdateStandards={handleUpdateStandards} hierarchy={hierarchy} onAddLog={addLog} showModal={showModal} syncBusy={settingsSync.status === 'saving' || settingsSync.status === 'loading'} />}
