@@ -378,7 +378,7 @@
             return null;
         };
 
-        function LoginScreen({ onLogin, hierarchy, globalAnnouncement, authStatus, authMessage, hasCredentials, onRetry }) {
+        function LoginScreen({ onLogin, onPreview, hierarchy, globalAnnouncement, authStatus, authMessage, hasCredentials, onRetry }) {
             const [role, setRole] = useState('user');
             const [unit, setUnit] = useState(hierarchy.leaves[0] || '');
             const [username, setUsername] = useState('');
@@ -500,6 +500,9 @@
                             <button type="submit" disabled={isAuthenticating || authStatus === 'loading'} className={`w-full text-white font-bold py-3.5 rounded-xl transition-all duration-300 mt-6 shadow-lg text-sm flex justify-center items-center ${isAuthenticating || authStatus === 'loading' ? 'bg-slate-400 cursor-not-allowed shadow-none' : 'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 hover:shadow-emerald-500/25 hover:-translate-y-0.5'}`}>
                                 {(isAuthenticating || authStatus === 'loading') ? <SmallLoader className="w-5 h-5 mr-2 text-white" /> : null}
                                 {isAuthenticating ? 'กำลังตรวจสอบสิทธิ์กับเซิร์ฟเวอร์...' : authStatus === 'loading' ? 'กำลังเชื่อมต่อ...' : 'ลงชื่อเข้าใช้ระบบ'}
+                            </button>
+                            <button type="button" onClick={onPreview} className="w-full border border-slate-300 bg-white text-slate-700 font-bold py-3 rounded-xl hover:bg-slate-50 transition-colors text-sm">
+                                ดูตัวอย่างระบบก่อน (ไม่เชื่อม Google Sheets)
                             </button>
                         </form>
                     </div>
@@ -2802,11 +2805,13 @@
 
             useEffect(() => {
                 if (!currentUser) return;
+                if (currentUser.preview) return;
                 refreshDatabase({ allowCacheFallback: true, silent: false }).catch(error => console.warn('โหลดข้อมูลรายงานเบื้องหลังไม่สำเร็จ:', error));
             }, [currentUser]);
 
             useEffect(() => {
                 if (!currentUser || currentUser.role !== 'admin') return;
+                if (currentUser.preview) return;
                 if (activeTab === 'settings_std') loadBaselinesOnly().catch(error => console.warn('ใช้ Baseline จาก cache:', error));
                 if (activeTab === 'audit') loadLogsOnly().catch(error => console.warn('ใช้ Logs จาก cache:', error));
                 if (activeTab === 'settings_unit' || activeTab === 'settings_access' || activeTab === 'settings_backup') {
@@ -2860,10 +2865,17 @@
                 setCurrentUser(null);
             };
 
+            const handlePreview = () => {
+                setCurrentUser({ role:'admin', unit:'Preview Admin', preview:true });
+                setSelectedDashboardUnit('overall');
+                setDatabaseStatus(initialCache.data.length ? 'offline-cache' : 'error');
+            };
+
             // 🌟 นำ URL ที่ได้จากการ Deploy Google Apps Script มาวางในเครื่องหมายคำพูดด้านล่างนี้
             const GOOGLE_SHEETS_URL = "https://script.google.com/macros/s/AKfycbyK0TX1GGB8ronBcpaAIU1vJYNhlSWqiiRYAF7rNZdFpu68-5gnCFT0VFZ56vNlIjKq/exec"; 
 
             const handleSaveData = async (payload) => {
+                if (currentUser?.preview) throw new Error('โหมดตัวอย่างไม่บันทึกข้อมูลลง Google Sheets');
                 const newRecord = { ...payload, type: 'energy_record', status: 'pending_review', token: sessionToken, timestamp: new Date().toISOString() };
                 if (!GOOGLE_SHEETS_URL || GOOGLE_SHEETS_URL.trim() === '') {
                     throw new Error('ยังไม่ได้ตั้งค่า Google Apps Script URL');
@@ -3030,7 +3042,7 @@
 
             if (!currentUser) {
                 const hasCredentials = Object.keys(adminPasswords).length + Object.keys(execPasswords).length + Object.keys(passwords).length > 0;
-                return <LoginScreen onLogin={handleLogin} hierarchy={hierarchy} globalAnnouncement={announcement} authStatus={authStatus} authMessage={authMessage} hasCredentials={hasCredentials} onRetry={() => loadBootstrap().catch(() => {})} />;
+                return <LoginScreen onLogin={handleLogin} onPreview={handlePreview} hierarchy={hierarchy} globalAnnouncement={announcement} authStatus={authStatus} authMessage={authMessage} hasCredentials={hasCredentials} onRetry={() => loadBootstrap().catch(() => {})} />;
             }
 
             return (
