@@ -440,6 +440,7 @@
                             <span className="inline-flex items-center mt-5 px-4 py-1.5 bg-emerald-50/80 text-emerald-700 text-[10px] font-bold rounded-full uppercase tracking-widest border border-emerald-200 shadow-sm">
                                 <Globe className="w-3 h-3 mr-1.5 text-emerald-500"/> Smart & Sustainable
                             </span>
+                            <p className="mt-2 text-[10px] font-bold text-slate-400">Frontend v4.0.2 • Settings Recovery</p>
                         </div>
 
                         <div className={`mb-5 rounded-xl border px-4 py-3 flex items-center justify-between gap-3 ${authStatus === 'online' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : authStatus === 'error' ? 'bg-rose-50 border-rose-200 text-rose-700' : authStatus === 'cached' ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-sky-50 border-sky-200 text-sky-700'}`}>
@@ -2656,7 +2657,8 @@
                     return raw;
                 } catch (error) {
                     setAuthStatus('error');
-                    setAuthMessage(hasLocalCredentials ? 'ใช้ข้อมูลล่าสุดในเครื่องได้ • กด “ลองใหม่” เมื่อต้องการซิงก์' : error.message);
+                    const mismatch = /token is required|Unknown action|loginResult/i.test(error.message || '');
+                    setAuthMessage(mismatch ? 'Apps Script เป็นคนละเวอร์ชัน — ต้อง Deploy Code.gs v4.0.2 เป็น New version' : (hasLocalCredentials ? 'ใช้ข้อมูลล่าสุดในเครื่องได้ • กด “ลองใหม่” เมื่อต้องการซิงก์' : error.message));
                     throw error;
                 }
             };
